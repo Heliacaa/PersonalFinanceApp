@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../../market/presentation/market_screen.dart';
+import '../../payment/presentation/add_funds_screen.dart';
 import '../../../core/network/dio_client.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -178,11 +179,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () {
-                      // TODO: Navigate to add funds with iyzico
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Add funds coming soon!')),
+                    onPressed: () async {
+                      final result = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AddFundsScreen(),
+                        ),
                       );
+                      // Refresh balance if payment was successful
+                      if (result == true) {
+                        _fetchUserData();
+                      }
                     },
                     icon: const Icon(Icons.add),
                     label: const Text('Add Funds'),

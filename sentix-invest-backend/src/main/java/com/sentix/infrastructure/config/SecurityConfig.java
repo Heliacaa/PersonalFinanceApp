@@ -39,7 +39,9 @@ public class SecurityConfig {
                                                                 "/swagger-ui/**",
                                                                 "/v3/api-docs/**",
                                                                 "/api/v1/stocks/**",
-                                                                "/api/v1/markets/**")
+                                                                "/api/v1/markets/**",
+                                                                "/api/v1/payments/callback",
+                                                                "/api/v1/payments/callback-page")
                                                 .permitAll()
                                                 .anyRequest().authenticated())
                                 .sessionManagement(session -> session
