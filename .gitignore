@@ -1,0 +1,44 @@
+### Global ###
+.DS_Store
+.env
+.env.local
+.vscode/
+.idea/
+*.iws
+*.iml
+*.ipr
+*.log
+*.swp
+
+### Java / Backend ###
+HELP.md
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### Flutter / Frontend ###
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+coverage/
+app.*.symbols
+app.*.map.json
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+### Python / MCP Server ###
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
