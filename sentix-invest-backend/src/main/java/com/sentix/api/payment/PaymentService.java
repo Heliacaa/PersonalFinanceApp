@@ -135,10 +135,44 @@ public class PaymentService {
 
             CheckoutForm checkoutForm = CheckoutForm.retrieve(request, iyzipayOptions);
 
+            // Check if iyzico returned an error
+            if (checkoutForm == null) {
+                return PaymentCallbackResult.builder()
+                        .success(false)
+                        .message("Could not retrieve payment status from iyzico. Please try again.")
+                        .build();
+            }
+
+            // Check iyzico response status
+            if (!"success".equals(checkoutForm.getStatus())) {
+                String errorMsg = checkoutForm.getErrorMessage() != null
+                        ? checkoutForm.getErrorMessage()
+                        : "Payment not completed. Please complete the payment form.";
+                return PaymentCallbackResult.builder()
+                        .success(false)
+                        .message(errorMsg)
+                        .build();
+            }
+
             Payment payment = paymentRepository.findByIyzicoToken(token)
                     .orElseThrow(() -> new RuntimeException("Payment not found for token: " + token));
 
-            if ("success".equals(checkoutForm.getPaymentStatus())) {
+            // Check payment status from iyzico
+            String paymentStatus = checkoutForm.getPaymentStatus();
+            log.info("Payment status for token {}: {}", token, paymentStatus);
+
+            if ("success".equals(paymentStatus) || "SUCCESS".equals(paymentStatus)) {
+                // Payment already processed?
+                if (PaymentStatus.SUCCESS.equals(payment.getStatus())) {
+                    User user = userRepository.findById(payment.getUserId())
+                            .orElseThrow(() -> new RuntimeException("User not found"));
+                    return PaymentCallbackResult.builder()
+                            .success(true)
+                            .message("Payment already processed successfully!")
+                            .newBalance(user.getBalance())
+                            .build();
+                }
+
                 payment.setStatus(PaymentStatus.SUCCESS);
                 payment.setIyzicoPaymentId(checkoutForm.getPaymentId());
                 paymentRepository.save(payment);
@@ -158,15 +192,25 @@ public class PaymentService {
                         .message("Payment successful! Your balance has been updated.")
                         .newBalance(newBalance)
                         .build();
+            } else if (paymentStatus == null || paymentStatus.isEmpty()) {
+                // Payment not yet completed
+                return PaymentCallbackResult.builder()
+                        .success(false)
+                        .message("Payment not completed yet. Please complete the card details in the payment form.")
+                        .build();
             } else {
                 payment.setStatus(PaymentStatus.FAILED);
                 paymentRepository.save(payment);
 
                 log.warn("Payment failed for token {}: {}", token, checkoutForm.getErrorMessage());
 
+                String errorMsg = checkoutForm.getErrorMessage() != null
+                        ? checkoutForm.getErrorMessage()
+                        : "Payment was declined or cancelled.";
+
                 return PaymentCallbackResult.builder()
                         .success(false)
-                        .message("Payment failed: " + checkoutForm.getErrorMessage())
+                        .message("Payment failed: " + errorMsg)
                         .build();
             }
         } catch (Exception e) {
