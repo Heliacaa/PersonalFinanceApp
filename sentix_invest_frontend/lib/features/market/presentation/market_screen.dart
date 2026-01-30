@@ -327,6 +327,26 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
+  Future<void> _navigateToIndexDetail(MarketIndex index) async {
+    try {
+      final quote = await _marketRepository.getStockQuote(index.symbol);
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => StockDetailScreen(stock: quote),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading index: $e')));
+      }
+    }
+  }
+
   Widget _buildMarketIndices() {
     if (_marketSummary == null) return const SizedBox();
 
@@ -348,62 +368,68 @@ class _MarketScreenState extends State<MarketScreen> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border(left: BorderSide(color: accentColor, width: 4)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    index.name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    index.symbol,
-                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                  ),
-                ],
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    index.price.toStringAsFixed(2),
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        isPositive ? Icons.arrow_upward : Icons.arrow_downward,
-                        color: changeColor,
-                        size: 16,
+      child: InkWell(
+        onTap: () => _navigateToIndexDetail(index),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(left: BorderSide(color: accentColor, width: 4)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      index.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
-                      Text(
-                        '${isPositive ? '+' : ''}${index.changePercent.toStringAsFixed(2)}%',
-                        style: TextStyle(
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      index.symbol,
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                    ),
+                  ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      index.price.toStringAsFixed(2),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          isPositive
+                              ? Icons.arrow_upward
+                              : Icons.arrow_downward,
                           color: changeColor,
-                          fontWeight: FontWeight.w600,
+                          size: 16,
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+                        Text(
+                          '${isPositive ? '+' : ''}${index.changePercent.toStringAsFixed(2)}%',
+                          style: TextStyle(
+                            color: changeColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

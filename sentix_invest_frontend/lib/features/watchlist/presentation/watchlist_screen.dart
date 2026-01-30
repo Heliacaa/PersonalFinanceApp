@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../data/watchlist_models.dart';
 import '../data/watchlist_repository.dart';
+import '../../market/data/market_repository.dart';
+import '../../market/presentation/stock_detail_screen.dart';
 
 class WatchlistScreen extends StatefulWidget {
   const WatchlistScreen({super.key});
@@ -11,6 +13,7 @@ class WatchlistScreen extends StatefulWidget {
 
 class _WatchlistScreenState extends State<WatchlistScreen> {
   final WatchlistRepository _watchlistRepository = WatchlistRepository();
+  final MarketRepository _marketRepository = MarketRepository();
 
   List<WatchlistItem> _watchlist = [];
   bool _isLoading = true;
@@ -144,6 +147,26 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     );
   }
 
+  Future<void> _navigateToStockDetail(WatchlistItem item) async {
+    try {
+      final quote = await _marketRepository.getStockQuote(item.symbol);
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => StockDetailScreen(stock: quote),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading stock: $e')));
+      }
+    }
+  }
+
   Widget _buildWatchlistCard(WatchlistItem item) {
     final isPositive = item.isPositive;
     final changeColor = isPositive ? Colors.green : Colors.red;
@@ -163,70 +186,74 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       },
       child: Card(
         margin: const EdgeInsets.only(bottom: 12),
-        child: ListTile(
-          contentPadding: const EdgeInsets.all(16),
-          title: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.symbol,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      item.stockName,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              if (item.currentPrice != null) ...[
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${item.currency ?? ''} ${item.currentPrice!.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        Icon(
-                          isPositive
-                              ? Icons.arrow_upward
-                              : Icons.arrow_downward,
-                          color: changeColor,
-                          size: 14,
+        child: InkWell(
+          onTap: () => _navigateToStockDetail(item),
+          borderRadius: BorderRadius.circular(12),
+          child: ListTile(
+            contentPadding: const EdgeInsets.all(16),
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.symbol,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
                         ),
-                        Text(
-                          '${isPositive ? '+' : ''}${(item.changePercent ?? 0).toStringAsFixed(2)}%',
-                          style: TextStyle(
+                      ),
+                      Text(
+                        item.stockName,
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                if (item.currentPrice != null) ...[
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${item.currency ?? ''} ${item.currentPrice!.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          Icon(
+                            isPositive
+                                ? Icons.arrow_upward
+                                : Icons.arrow_downward,
                             color: changeColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                            size: 14,
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ] else ...[
-                Text('Loading...', style: TextStyle(color: Colors.grey[500])),
+                          Text(
+                            '${isPositive ? '+' : ''}${(item.changePercent ?? 0).toStringAsFixed(2)}%',
+                            style: TextStyle(
+                              color: changeColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  Text('Loading...', style: TextStyle(color: Colors.grey[500])),
+                ],
               ],
-            ],
-          ),
-          trailing: IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () => _removeFromWatchlist(item),
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => _removeFromWatchlist(item),
+            ),
           ),
         ),
       ),
