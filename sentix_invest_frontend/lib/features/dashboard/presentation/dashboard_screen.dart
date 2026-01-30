@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../../market/presentation/market_screen.dart';
+import '../../portfolio/presentation/portfolio_screen.dart';
+import '../../watchlist/presentation/watchlist_screen.dart';
 import '../../payment/presentation/add_funds_screen.dart';
 import '../../../core/network/dio_client.dart';
 
@@ -20,6 +22,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? _fullName;
   double? _balance;
   String? _error;
+
+  final List<String> _titles = [
+    'Dashboard',
+    'Markets',
+    'Portfolio',
+    'Watchlist',
+  ];
 
   @override
   void initState() {
@@ -57,20 +66,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  Widget _getCurrentScreen() {
+    switch (_currentIndex) {
+      case 0:
+        return _buildDashboard();
+      case 1:
+        return const MarketScreen();
+      case 2:
+        return const PortfolioScreen();
+      case 3:
+        return const WatchlistScreen();
+      default:
+        return _buildDashboard();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_currentIndex == 0 ? 'Dashboard' : 'Markets'),
-        actions: [
-          IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
-        ],
-      ),
-      body: _currentIndex == 0 ? _buildDashboard() : const MarketScreen(),
+      appBar: _currentIndex == 0
+          ? AppBar(
+              title: Text(_titles[_currentIndex]),
+              actions: [
+                IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
+              ],
+            )
+          : null,
+      body: _getCurrentScreen(),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {
           setState(() => _currentIndex = index);
+          // Refresh data when returning to dashboard
+          if (index == 0) {
+            _fetchUserData();
+          }
         },
         destinations: const [
           NavigationDestination(
@@ -82,6 +112,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
             icon: Icon(Icons.trending_up_outlined),
             selectedIcon: Icon(Icons.trending_up),
             label: 'Markets',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: Icon(Icons.account_balance_wallet),
+            label: 'Portfolio',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.star_outline),
+            selectedIcon: Icon(Icons.star),
+            label: 'Watchlist',
           ),
         ],
       ),
@@ -135,6 +175,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 12),
             _buildQuickActions(),
+            const SizedBox(height: 24),
+
+            // Recent Activity Section
+            const Text(
+              'Get Started',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            _buildGettingStartedCard(),
           ],
         ),
       ),
@@ -162,7 +211,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Total Balance',
+              'Cash Balance',
               style: TextStyle(fontSize: 14, color: Colors.white70),
             ),
             const SizedBox(height: 8),
@@ -199,6 +248,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => setState(() => _currentIndex = 2),
+                    icon: const Icon(Icons.account_balance_wallet),
+                    label: const Text('Portfolio'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white),
+                    ),
+                  ),
+                ),
               ],
             ),
           ],
@@ -214,6 +275,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: _buildActionCard(
             icon: Icons.trending_up,
             label: 'Markets',
+            color: Colors.blue,
             onTap: () => setState(() => _currentIndex = 1),
           ),
         ),
@@ -222,11 +284,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: _buildActionCard(
             icon: Icons.account_balance_wallet,
             label: 'Portfolio',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Portfolio coming soon!')),
-              );
-            },
+            color: Colors.green,
+            onTap: () => setState(() => _currentIndex = 2),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildActionCard(
+            icon: Icons.star,
+            label: 'Watchlist',
+            color: Colors.amber,
+            onTap: () => setState(() => _currentIndex = 3),
           ),
         ),
       ],
@@ -236,21 +304,135 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildActionCard({
     required IconData icon,
     required String label,
+    required Color color,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
       child: Card(
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              Icon(icon, size: 32),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 24, color: color),
+              ),
               const SizedBox(height: 8),
-              Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                ),
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildGettingStartedCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.rocket_launch,
+                  color: Theme.of(context).primaryColor,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Start Investing Today',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _buildStepItem(
+              number: '1',
+              title: 'Add Funds',
+              description: 'Deposit money to start trading',
+              isCompleted: (_balance ?? 0) > 0,
+            ),
+            _buildStepItem(
+              number: '2',
+              title: 'Explore Markets',
+              description: 'Search for stocks you want to invest in',
+              isCompleted: false,
+            ),
+            _buildStepItem(
+              number: '3',
+              title: 'Buy Your First Stock',
+              description: 'Make your first investment',
+              isCompleted: false,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStepItem({
+    required String number,
+    required String title,
+    required String description,
+    required bool isCompleted,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isCompleted ? Colors.green : Colors.grey[300],
+            ),
+            child: Center(
+              child: isCompleted
+                  ? const Icon(Icons.check, size: 16, color: Colors.white)
+                  : Text(
+                      number,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black54,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    decoration: isCompleted ? TextDecoration.lineThrough : null,
+                    color: isCompleted ? Colors.grey : null,
+                  ),
+                ),
+                Text(
+                  description,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
