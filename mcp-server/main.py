@@ -7,16 +7,7 @@ import io
 from textblob import TextBlob
 import yfinance as yf
 from datetime import datetime, timedelta
-import requests
 import random
-
-# Create custom session with browser-like headers
-session = requests.Session()
-session.headers.update({
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-})
 
 app = FastAPI(title="SentixInvest MCP Server", version="1.0.0")
 
@@ -189,7 +180,7 @@ def get_mock_stock_data(symbol: str) -> Optional[StockQuote]:
 def get_stock_data(symbol: str) -> Optional[StockQuote]:
     """Fetch current stock data from Yahoo Finance, with mock fallback"""
     try:
-        ticker = yf.Ticker(symbol, session=session)
+        ticker = yf.Ticker(symbol)
         # Use history instead of info - it's less rate-limited
         hist = ticker.history(period="5d")
         
@@ -242,7 +233,7 @@ def get_mock_index_data(symbol: str, name: str) -> MarketIndex:
 def get_index_data(symbol: str, name: str) -> Optional[MarketIndex]:
     """Fetch index data from Yahoo Finance with mock fallback"""
     try:
-        ticker = yf.Ticker(symbol, session=session)
+        ticker = yf.Ticker(symbol)
         hist = ticker.history(period="2d")
         
         if hist.empty:
@@ -284,6 +275,56 @@ def get_market_summary():
         timestamp=datetime.now().isoformat()
     )
 
+def get_mock_history_data(symbol: str, period: str) -> List[Dict[str, Any]]:
+    """Generate mock historical data when Yahoo Finance is unavailable"""
+    symbol_upper = symbol.upper()
+    base_price = MOCK_PRICES.get(symbol_upper, 100.0)
+    
+    # Determine number of data points based on period
+    period_days = {
+        "1d": 1,
+        "5d": 5,
+        "1mo": 22,
+        "3mo": 66,
+        "6mo": 132,
+        "1y": 252,
+        "2y": 504,
+        "5y": 1260,
+        "10y": 2520,
+        "ytd": 100,
+        "max": 500
+    }
+    
+    num_days = period_days.get(period, 22)
+    data = []
+    
+    current_date = datetime.now()
+    current_price = base_price
+    
+    for i in range(num_days, 0, -1):
+        date = current_date - timedelta(days=i)
+        if date.weekday() >= 5:  # Skip weekends
+            continue
+            
+        # Generate realistic-looking price movement
+        daily_change = random.uniform(-0.03, 0.03)  # -3% to +3%
+        current_price = current_price * (1 + daily_change)
+        
+        high = current_price * (1 + random.uniform(0, 0.02))
+        low = current_price * (1 - random.uniform(0, 0.02))
+        open_price = low + (high - low) * random.random()
+        
+        data.append({
+            "date": date.strftime("%Y-%m-%d"),
+            "open": round(open_price, 2),
+            "high": round(high, 2),
+            "low": round(low, 2),
+            "close": round(current_price, 2),
+            "volume": random.randint(10000000, 100000000)
+        })
+    
+    return data
+
 @app.get("/stock/{symbol}/history", response_model=StockHistory)
 def get_stock_history(symbol: str, period: str = "1mo"):
     """
@@ -299,7 +340,13 @@ def get_stock_history(symbol: str, period: str = "1mo"):
         hist = ticker.history(period=period)
         
         if hist.empty:
-            raise HTTPException(status_code=404, detail=f"No history found for {symbol}")
+            print(f"No history data for {symbol} with period {period} - using mock data")
+            data = get_mock_history_data(symbol, period)
+            return StockHistory(
+                symbol=symbol.upper(),
+                data=data,
+                period=period
+            )
         
         data = []
         for date, row in hist.iterrows():
@@ -320,7 +367,15 @@ def get_stock_history(symbol: str, period: str = "1mo"):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching history: {str(e)}")
+        print(f"Error fetching history for {symbol}: {e} - using mock data")
+        data = get_mock_history_data(symbol, period)
+        return StockHistory(
+            symbol=symbol.upper(),
+            data=data,
+            period=period
+        )
+
+
 
 @app.get("/search/{query}")
 def search_stocks(query: str, limit: int = 10):
