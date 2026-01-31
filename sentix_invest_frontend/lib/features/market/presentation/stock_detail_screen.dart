@@ -5,6 +5,7 @@ import '../../trading/presentation/sell_stock_screen.dart';
 import '../../portfolio/data/portfolio_repository.dart';
 import '../../portfolio/data/portfolio_models.dart';
 import '../../watchlist/data/watchlist_repository.dart';
+import '../../alert/presentation/create_alert_screen.dart';
 import '../../../core/network/dio_client.dart';
 
 class StockDetailScreen extends StatefulWidget {
@@ -153,6 +154,19 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     if (result == true) {
       _loadData(); // Refresh data after sale
     }
+  }
+
+  void _navigateToAlert() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateAlertScreen(
+          symbol: widget.stock.symbol,
+          stockName: widget.stock.name,
+          currentPrice: widget.stock.price,
+        ),
+      ),
+    );
   }
 
   @override
@@ -479,48 +493,74 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   }
 
   Widget _buildActionButtons() {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: SizedBox(
-            height: 56,
-            child: ElevatedButton.icon(
-              onPressed: _navigateToBuy,
-              icon: const Icon(Icons.add),
-              label: const Text(
-                'Buy',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+        // Alert Button Row
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: _navigateToAlert,
+            icon: const Icon(Icons.notifications_outlined),
+            label: const Text(
+              'Set Price Alert',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF6C5CE7),
+              side: const BorderSide(color: Color(0xFF6C5CE7), width: 1.5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
           ),
         ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: SizedBox(
-            height: 56,
-            child: ElevatedButton.icon(
-              onPressed: _holding != null ? _navigateToSell : null,
-              icon: const Icon(Icons.remove),
-              label: const Text(
-                'Sell',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+        const SizedBox(height: 12),
+        // Buy/Sell Buttons Row
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 56,
+                child: ElevatedButton.icon(
+                  onPressed: _navigateToBuy,
+                  icon: const Icon(Icons.add),
+                  label: const Text(
+                    'Buy',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: SizedBox(
+                height: 56,
+                child: ElevatedButton.icon(
+                  onPressed: _holding != null ? _navigateToSell : null,
+                  icon: const Icon(Icons.remove),
+                  label: const Text(
+                    'Sell',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );

@@ -5,6 +5,7 @@ import '../../market/presentation/market_screen.dart';
 import '../../portfolio/presentation/portfolio_screen.dart';
 import '../../watchlist/presentation/watchlist_screen.dart';
 import '../../payment/presentation/add_funds_screen.dart';
+import '../../alert/presentation/alerts_list_screen.dart';
 import '../../../core/network/dio_client.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -269,33 +270,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildQuickActions() {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _buildActionCard(
-            icon: Icons.trending_up,
-            label: 'Markets',
-            color: Colors.blue,
-            onTap: () => setState(() => _currentIndex = 1),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _buildActionCard(
+                icon: Icons.trending_up,
+                label: 'Markets',
+                color: Colors.blue,
+                onTap: () => setState(() => _currentIndex = 1),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildActionCard(
+                icon: Icons.account_balance_wallet,
+                label: 'Portfolio',
+                color: Colors.green,
+                onTap: () => setState(() => _currentIndex = 2),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildActionCard(
-            icon: Icons.account_balance_wallet,
-            label: 'Portfolio',
-            color: Colors.green,
-            onTap: () => setState(() => _currentIndex = 2),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildActionCard(
-            icon: Icons.star,
-            label: 'Watchlist',
-            color: Colors.amber,
-            onTap: () => setState(() => _currentIndex = 3),
-          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _buildActionCard(
+                icon: Icons.star,
+                label: 'Watchlist',
+                color: Colors.amber,
+                onTap: () => setState(() => _currentIndex = 3),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildActionCard(
+                icon: Icons.notifications,
+                label: 'Alerts',
+                color: const Color(0xFF6C5CE7),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AlertsListScreen(),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
