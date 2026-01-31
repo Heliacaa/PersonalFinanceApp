@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/alerts")
+@RequestMapping("/api/v1/alerts")
 @RequiredArgsConstructor
 public class PriceAlertController {
 
