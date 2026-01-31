@@ -37,4 +37,10 @@ public class PortfolioController {
         }
         return ResponseEntity.ok(holding);
     }
+
+    @GetMapping("/analytics")
+    public ResponseEntity<PortfolioPerformanceResponse> getPerformanceAnalytics(
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(portfolioService.getPerformanceAnalytics(user));
+    }
 }

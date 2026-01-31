@@ -6,6 +6,7 @@ import '../../portfolio/presentation/portfolio_screen.dart';
 import '../../watchlist/presentation/watchlist_screen.dart';
 import '../../payment/presentation/add_funds_screen.dart';
 import '../../alert/presentation/alerts_list_screen.dart';
+import '../../analytics/presentation/portfolio_analytics_screen.dart';
 import '../../../core/network/dio_client.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -318,6 +319,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
             ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _buildActionCard(
+                icon: Icons.analytics,
+                label: 'Analytics',
+                color: const Color(0xFF00B4D8),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PortfolioAnalyticsScreen(),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(child: SizedBox()), // Empty space for symmetry
           ],
         ),
       ],

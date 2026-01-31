@@ -420,5 +420,115 @@ def search_stocks(query: str, limit: int = 10):
     
     return {"results": results, "query": query}
 
+
+# ===== Stock News Models =====
+class StockNewsItem(BaseModel):
+    title: str
+    summary: str
+    source: str
+    url: str
+    publishedAt: str
+    sentiment: str  # BULLISH, BEARISH, NEUTRAL
+    sentimentScore: float  # -1.0 to 1.0
+
+class StockNewsResponse(BaseModel):
+    symbol: str
+    stockName: str
+    news: List[StockNewsItem]
+
+
+# Simulated news templates for different stocks
+NEWS_TEMPLATES = {
+    "positive": [
+        {"title": "{company} Reports Strong Quarterly Earnings", "summary": "{company} exceeded analyst expectations with a significant increase in revenue and profits."},
+        {"title": "{company} Announces Strategic Partnership", "summary": "New collaboration expected to accelerate growth and expand market reach for {company}."},
+        {"title": "Analysts Upgrade {company} Stock Rating", "summary": "Major investment banks raise price targets citing strong fundamentals and growth prospects."},
+        {"title": "{company} Expands Into New Markets", "summary": "The company announces expansion plans that could significantly increase its addressable market."},
+        {"title": "{company} Launches Innovative New Product", "summary": "Early reviews praise the new offering, with analysts expecting strong sales."},
+    ],
+    "negative": [
+        {"title": "{company} Faces Regulatory Scrutiny", "summary": "Regulators investigate potential compliance issues, creating uncertainty for investors."},
+        {"title": "{company} Reports Disappointing Revenue", "summary": "Quarterly results fall short of expectations, leading to revised guidance."},
+        {"title": "Supply Chain Issues Impact {company}", "summary": "Ongoing logistics challenges may affect near-term profitability."},
+        {"title": "Competition Intensifies for {company}", "summary": "New market entrants are pressuring margins and market share."},
+    ],
+    "neutral": [
+        {"title": "{company} Hosts Annual Investor Day", "summary": "Management outlines strategic priorities and long-term vision for shareholders."},
+        {"title": "{company} Names New Executive", "summary": "Leadership change signals potential shift in company strategy."},
+        {"title": "Industry Analysis: {company}'s Market Position", "summary": "Comprehensive review of competitive landscape and growth opportunities."},
+        {"title": "{company} Stock Sees High Trading Volume", "summary": "Unusual activity as investors assess market conditions."},
+    ]
+}
+
+NEWS_SOURCES = ["Bloomberg", "Reuters", "CNBC", "Financial Times", "Wall Street Journal", "MarketWatch", "Yahoo Finance", "Investing.com"]
+
+
+def generate_news_for_stock(symbol: str, count: int = 5) -> List[StockNewsItem]:
+    """Generate simulated news articles for a given stock"""
+    stock_name = STOCK_NAMES.get(symbol.upper(), symbol)
+    news_items = []
+    
+    # Generate a mix of positive, negative, and neutral news
+    sentiments = ["positive", "positive", "neutral", "neutral", "negative"]
+    random.shuffle(sentiments)
+    
+    for i in range(min(count, len(sentiments))):
+        sentiment_type = sentiments[i]
+        templates = NEWS_TEMPLATES[sentiment_type]
+        template = random.choice(templates)
+        
+        # Calculate published time (random within last 7 days)
+        hours_ago = random.randint(1, 168)  # 1 hour to 7 days
+        published_time = datetime.now() - timedelta(hours=hours_ago)
+        
+        # Generate sentiment score based on type
+        if sentiment_type == "positive":
+            sentiment_score = random.uniform(0.3, 0.9)
+            sentiment = "BULLISH"
+        elif sentiment_type == "negative":
+            sentiment_score = random.uniform(-0.9, -0.3)
+            sentiment = "BEARISH"
+        else:
+            sentiment_score = random.uniform(-0.2, 0.2)
+            sentiment = "NEUTRAL"
+        
+        news_items.append(StockNewsItem(
+            title=template["title"].format(company=stock_name),
+            summary=template["summary"].format(company=stock_name),
+            source=random.choice(NEWS_SOURCES),
+            url=f"https://example.com/news/{symbol.lower()}-{i}",
+            publishedAt=published_time.isoformat(),
+            sentiment=sentiment,
+            sentimentScore=round(sentiment_score, 2)
+        ))
+    
+    # Sort by published date (most recent first)
+    news_items.sort(key=lambda x: x.publishedAt, reverse=True)
+    return news_items
+
+
+@app.get("/news/{symbol}", response_model=StockNewsResponse)
+def get_stock_news(symbol: str, count: int = 5):
+    """
+    Get news articles for a specific stock.
+    Returns simulated news data with sentiment analysis.
+    In production, this would integrate with a real news API like Finnhub or Alpha Vantage.
+    """
+    symbol_upper = symbol.upper()
+    stock_name = STOCK_NAMES.get(symbol_upper, symbol)
+    
+    # Limit count to reasonable range
+    count = max(1, min(count, 10))
+    
+    news = generate_news_for_stock(symbol_upper, count)
+    
+    return StockNewsResponse(
+        symbol=symbol_upper,
+        stockName=stock_name,
+        news=news
+    )
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
