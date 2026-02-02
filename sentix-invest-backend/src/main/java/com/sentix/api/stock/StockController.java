@@ -37,4 +37,12 @@ public class StockController {
     public ResponseEntity<Map<String, Object>> searchStocks(@PathVariable String query) {
         return ResponseEntity.ok(stockService.searchStocks(query));
     }
+
+    @GetMapping("/{symbol}/news")
+    public ResponseEntity<Map<String, Object>> getStockNews(
+            @PathVariable String symbol,
+            @RequestParam(defaultValue = "5") int count) {
+        Map<String, Object> news = stockService.getStockNews(symbol, count);
+        return ResponseEntity.ok(news);
+    }
 }

@@ -112,6 +112,24 @@ public class StockService {
         }
     }
 
+    public Map<String, Object> getStockNews(String symbol, int count) {
+        try {
+            return getMcpClient()
+                    .get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/news/{symbol}")
+                            .queryParam("count", count)
+                            .build(symbol))
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .timeout(Duration.ofSeconds(10))
+                    .block();
+        } catch (Exception e) {
+            log.error("Error fetching news for {}: {}", symbol, e.getMessage());
+            return Map.of("symbol", symbol, "stockName", symbol, "news", java.util.List.of());
+        }
+    }
+
     private MarketIndexDto mapToMarketIndex(Map<String, Object> data) {
         if (data == null) {
             return null;

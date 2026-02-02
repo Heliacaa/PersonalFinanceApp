@@ -1,25 +1,17 @@
-import 'package:dio/dio.dart';
+import '../../../core/network/dio_client.dart';
 import 'news_models.dart';
 
 class NewsRepository {
-  final Dio _mcpDio;
+  final DioClient _dioClient;
 
-  NewsRepository({Dio? mcpDio})
-    : _mcpDio =
-          mcpDio ??
-          Dio(
-            BaseOptions(
-              baseUrl: 'http://localhost:8000', // MCP server
-              connectTimeout: const Duration(seconds: 10),
-              receiveTimeout: const Duration(seconds: 10),
-            ),
-          );
+  NewsRepository({DioClient? dioClient})
+    : _dioClient = dioClient ?? DioClient();
 
   /// Get news for a specific stock
   Future<StockNews> getNewsForStock(String symbol, {int count = 5}) async {
     try {
-      final response = await _mcpDio.get(
-        '/news/$symbol',
+      final response = await _dioClient.dio.get(
+        '/stocks/$symbol/news',
         queryParameters: {'count': count},
       );
       if (response.statusCode == 200) {

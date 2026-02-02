@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../data/analytics_models.dart';
 import '../data/analytics_repository.dart';
+import '../../market/data/market_models.dart';
+import '../../market/presentation/stock_detail_screen.dart';
 
 class PortfolioAnalyticsScreen extends StatefulWidget {
   const PortfolioAnalyticsScreen({super.key});
@@ -40,6 +42,25 @@ class _PortfolioAnalyticsScreenState extends State<PortfolioAnalyticsScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  void _navigateToStockDetail(AllocationByStock allocation) {
+    // Create a StockQuote from the allocation data
+    final stock = StockQuote(
+      symbol: allocation.symbol,
+      name: allocation.stockName,
+      price: allocation.value,
+      change: 0,
+      changePercent: allocation.profitLossPercent,
+      currency: 'USD',
+      marketState: 'REGULAR',
+      timestamp: DateTime.now().toIso8601String(),
+    );
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => StockDetailScreen(stock: stock)),
+    );
   }
 
   @override
@@ -462,59 +483,69 @@ class _PortfolioAnalyticsScreenState extends State<PortfolioAnalyticsScreen> {
             final color = a.isPositive
                 ? const Color(0xFF00D9A5)
                 : const Color(0xFFFF6B6B);
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1F1F35),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+            return InkWell(
+              onTap: () => _navigateToStockDetail(a),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1F1F35),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            a.symbol,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          Text(
+                            a.stockName,
+                            style: TextStyle(
+                              color: Colors.grey[500],
+                              fontSize: 12,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          a.symbol,
+                          '\$${a.value.toStringAsFixed(2)}',
                           style: const TextStyle(
                             color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         Text(
-                          a.stockName,
+                          '${a.isPositive ? '+' : ''}${a.profitLossPercent.toStringAsFixed(2)}%',
                           style: TextStyle(
-                            color: Colors.grey[500],
+                            color: color,
+                            fontWeight: FontWeight.w500,
                             fontSize: 12,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        '\$${a.value.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        '${a.isPositive ? '+' : ''}${a.profitLossPercent.toStringAsFixed(2)}%',
-                        style: TextStyle(
-                          color: color,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.chevron_right,
+                      color: Colors.grey[600],
+                      size: 20,
+                    ),
+                  ],
+                ),
               ),
             );
           }),
