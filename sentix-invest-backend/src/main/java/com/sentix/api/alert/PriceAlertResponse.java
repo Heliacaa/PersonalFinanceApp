@@ -19,4 +19,6 @@ public class PriceAlertResponse {
     private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime triggeredAt;
+    private BigDecimal referencePrice;
+    private Integer daysNotice;
 }

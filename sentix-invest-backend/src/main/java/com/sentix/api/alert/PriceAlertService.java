@@ -208,6 +208,8 @@ public class PriceAlertService {
                 .isActive(alert.getIsActive())
                 .createdAt(alert.getCreatedAt())
                 .triggeredAt(alert.getTriggeredAt())
+                .referencePrice(alert.getReferencePrice())
+                .daysNotice(alert.getDaysNotice())
                 .build();
     }
 }
