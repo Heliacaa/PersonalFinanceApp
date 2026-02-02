@@ -40,7 +40,7 @@ public class PriceAlertService {
                 .user(user)
                 .symbol(request.getSymbol().toUpperCase())
                 .stockName(request.getStockName())
-                .targetPrice(request.getTargetPrice())
+                .targetPrice(request.getTargetPrice() != null ? request.getTargetPrice() : BigDecimal.ZERO)
                 .referencePrice(request.getReferencePrice())
                 .daysNotice(request.getDaysNotice())
                 .alertType(alertType)

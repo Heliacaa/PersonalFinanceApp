@@ -219,10 +219,32 @@ class _AlertsListScreenState extends State<AlertsListScreen>
   }
 
   Widget _buildAlertCard(PriceAlert alert, {required bool isActive}) {
+    final isEventAlert = alert.isEarnings || alert.isDividend;
     final isAbove = alert.alertType == 'ABOVE';
-    final targetColor = isAbove
-        ? const Color(0xFF00D9A5)
-        : const Color(0xFFFF6B6B);
+    
+    // Choose colors and icons based on alert type
+    Color alertColor;
+    IconData alertIcon;
+    String alertLabel;
+    
+    if (alert.isDividend) {
+      alertColor = const Color(0xFF6C5CE7); // Purple for dividends
+      alertIcon = Icons.attach_money_rounded;
+      alertLabel = 'DIVIDEND';
+    } else if (alert.isEarnings) {
+      alertColor = const Color(0xFFFFA502); // Orange for earnings
+      alertIcon = Icons.event_note_rounded;
+      alertLabel = 'EARNINGS';
+    } else if (alert.isPercent) {
+      alertColor = const Color(0xFF00B894); // Teal for percent change
+      alertIcon = Icons.percent_rounded;
+      alertLabel = 'PERCENT';
+    } else {
+      alertColor = isAbove ? const Color(0xFF00D9A5) : const Color(0xFFFF6B6B);
+      alertIcon = isAbove ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
+      alertLabel = alert.alertType;
+    }
+    
     final priceDiff = alert.targetPrice - alert.currentPrice;
     final percentDiff = (priceDiff / alert.currentPrice) * 100;
 
@@ -249,8 +271,8 @@ class _AlertsListScreenState extends State<AlertsListScreen>
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(16),
-          border: alert.wouldTrigger && isActive
-              ? Border.all(color: targetColor, width: 2)
+          border: !isEventAlert && alert.wouldTrigger && isActive
+              ? Border.all(color: alertColor, width: 2)
               : null,
         ),
         child: ListTile(
@@ -259,14 +281,12 @@ class _AlertsListScreenState extends State<AlertsListScreen>
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: targetColor.withOpacity(0.2),
+              color: alertColor.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
-              isAbove
-                  ? Icons.arrow_upward_rounded
-                  : Icons.arrow_downward_rounded,
-              color: targetColor,
+              alertIcon,
+              color: alertColor,
               size: 24,
             ),
           ),
@@ -284,13 +304,13 @@ class _AlertsListScreenState extends State<AlertsListScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: targetColor.withOpacity(0.2),
+                  color: alertColor.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  alert.alertType,
+                  alertLabel,
                   style: TextStyle(
-                    color: targetColor,
+                    color: alertColor,
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),
@@ -308,28 +328,53 @@ class _AlertsListScreenState extends State<AlertsListScreen>
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  Text(
-                    'Target: \$${alert.targetPrice.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      color: targetColor,
-                      fontWeight: FontWeight.w600,
+              if (isEventAlert) ...[
+                // For earnings/dividend alerts, show notification timing
+                Row(
+                  children: [
+                    Icon(Icons.notifications_active, size: 14, color: alertColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Notify ${alert.daysNotice ?? 1} day${(alert.daysNotice ?? 1) > 1 ? 's' : ''} before',
+                      style: TextStyle(
+                        color: alertColor,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Current: \$${alert.currentPrice.toStringAsFixed(2)}',
-                    style: TextStyle(color: Colors.grey[400]),
-                  ),
-                ],
-              ),
-              if (isActive) ...[
+                  ],
+                ),
                 const SizedBox(height: 4),
                 Text(
-                  '${percentDiff.abs().toStringAsFixed(1)}% ${priceDiff > 0 ? 'below' : 'above'} target',
+                  alert.isDividend 
+                      ? 'Waiting for dividend announcement'
+                      : 'Waiting for earnings date',
                   style: TextStyle(color: Colors.grey[500], fontSize: 12),
                 ),
+              ] else ...[
+                // For price alerts, show target and current price
+                Row(
+                  children: [
+                    Text(
+                      'Target: \$${alert.targetPrice.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: alertColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Current: \$${alert.currentPrice.toStringAsFixed(2)}',
+                      style: TextStyle(color: Colors.grey[400]),
+                    ),
+                  ],
+                ),
+                if (isActive) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${percentDiff.abs().toStringAsFixed(1)}% ${priceDiff > 0 ? 'below' : 'above'} target',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  ),
+                ],
               ],
               if (!isActive && alert.triggeredAt != null) ...[
                 const SizedBox(height: 4),

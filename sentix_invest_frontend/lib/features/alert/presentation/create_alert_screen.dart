@@ -42,15 +42,27 @@ class _CreateAlertScreenState extends State<CreateAlertScreen> {
   }
 
   Future<void> _createAlert() async {
-    if (!_formKey.currentState!.validate()) return;
+    // Only validate form if it's a price alert (where the input is visible)
+    bool isPriceAlert = [
+      'ABOVE',
+      'BELOW',
+      'PERCENT_CHANGE',
+    ].contains(_alertType);
+    if (isPriceAlert && !_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
     try {
+      // For non-price alerts, targetPrice is ignored by backend logic but required by @Positive validation.
+      // We send 1.0 as a dummy positive value.
+      final double targetPrice = isPriceAlert
+          ? (double.tryParse(_priceController.text) ?? 0)
+          : 1.0;
+
       final request = CreateAlertRequest(
         symbol: widget.symbol,
         stockName: widget.stockName,
-        targetPrice: double.tryParse(_priceController.text) ?? 0,
+        targetPrice: targetPrice,
         alertType: _alertType,
         referencePrice: widget.currentPrice,
         daysNotice: int.tryParse(_daysNoticeController.text),
