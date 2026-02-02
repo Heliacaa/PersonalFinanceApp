@@ -163,6 +163,21 @@ public class StockService {
         }
     }
 
+    public Map<String, Object> getEarnings(String symbol) {
+        try {
+            return getMcpClient()
+                    .get()
+                    .uri("/earnings/{symbol}", symbol)
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .timeout(Duration.ofSeconds(15))
+                    .block();
+        } catch (Exception e) {
+            log.error("Error fetching earnings for {}: {}", symbol, e.getMessage());
+            return null;
+        }
+    }
+
     private MarketIndexDto mapToMarketIndex(Map<String, Object> data) {
         if (data == null) {
             return null;

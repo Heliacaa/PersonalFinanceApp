@@ -42,6 +42,12 @@ public class PriceAlert {
     @Column(nullable = false)
     private Boolean isActive;
 
+    @Column(precision = 19, scale = 4)
+    private BigDecimal referencePrice;
+
+    @Column
+    private Integer daysNotice;
+
     private LocalDateTime createdAt;
     private LocalDateTime triggeredAt;
 

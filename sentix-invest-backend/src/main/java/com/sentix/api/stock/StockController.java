@@ -65,4 +65,14 @@ public class StockController {
         }
         return ResponseEntity.ok(dividends);
     }
+
+    @GetMapping("/earnings/{symbol}")
+    public ResponseEntity<Map<String, Object>> getStockEarnings(
+            @PathVariable String symbol) {
+        Map<String, Object> earnings = stockService.getEarnings(symbol);
+        if (earnings == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(earnings);
+    }
 }

@@ -20,5 +20,8 @@ public class CreateAlertRequest {
     private BigDecimal targetPrice;
 
     @NotBlank(message = "Alert type is required")
-    private String alertType; // "ABOVE" or "BELOW"
+    private String alertType; // "ABOVE", "BELOW", "PERCENT_CHANGE", "EARNINGS_REMINDER", "DIVIDEND_PAYMENT"
+
+    private BigDecimal referencePrice;
+    private Integer daysNotice;
 }

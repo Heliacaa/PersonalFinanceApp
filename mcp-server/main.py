@@ -911,8 +911,175 @@ def get_stock_dividends(symbol: str):
     return get_dividend_data(symbol.upper())
 
 
+# ===== Earnings Calendar Models =====
+class EarningsReport(BaseModel):
+    date: str
+    epsActual: Optional[float] = None
+    epsEstimate: Optional[float] = None
+    revenueActual: Optional[float] = None
+    revenueEstimate: Optional[float] = None
+    surprise: Optional[float] = None  # EPS surprise percentage
+    isBeat: Optional[bool] = None
+
+class StockEarnings(BaseModel):
+    symbol: str
+    stockName: str
+    hasUpcoming: bool
+    nextEarningsDate: Optional[str] = None
+    daysUntilEarnings: Optional[int] = None
+    nextEpsEstimate: Optional[float] = None
+    nextRevenueEstimate: Optional[float] = None
+    fiscalQuarter: Optional[str] = None
+    history: List[EarningsReport]
+
+
+def get_earnings_data(symbol: str) -> StockEarnings:
+    """Get earnings information for a stock"""
+    stock_name = STOCK_NAMES.get(symbol.upper(), symbol)
+    
+    try:
+        ticker = yf.Ticker(symbol)
+        calendar = ticker.calendar
+        earnings = ticker.earnings_dates
+        
+        history = []
+        next_earnings_date = None
+        days_until = None
+        eps_estimate = None
+        revenue_estimate = None
+        fiscal_quarter = None
+        
+        # Process earnings history
+        if earnings is not None and not earnings.empty:
+            now = datetime.now()
+            
+            for date_idx in earnings.index:
+                try:
+                    date = date_idx.to_pydatetime() if hasattr(date_idx, 'to_pydatetime') else date_idx
+                    date_str = date.strftime("%Y-%m-%d") if hasattr(date, 'strftime') else str(date_idx)[:10]
+                    
+                    row = earnings.loc[date_idx]
+                    
+                    eps_actual = row.get('Reported EPS') if 'Reported EPS' in row else None
+                    eps_est = row.get('EPS Estimate') if 'EPS Estimate' in row else None
+                    
+                    # Check if future earnings
+                    if hasattr(date, 'year') and date > now:
+                        if next_earnings_date is None:
+                            next_earnings_date = date_str
+                            days_until = (date - now).days
+                            eps_estimate = float(eps_est) if eps_est is not None and not pd.isna(eps_est) else None
+                    else:
+                        # Past earnings
+                        surprise = None
+                        is_beat = None
+                        if eps_actual is not None and eps_est is not None:
+                            if not pd.isna(eps_actual) and not pd.isna(eps_est) and eps_est != 0:
+                                surprise = round(((eps_actual - eps_est) / abs(eps_est)) * 100, 2)
+                                is_beat = eps_actual > eps_est
+                        
+                        history.append(EarningsReport(
+                            date=date_str,
+                            epsActual=float(eps_actual) if eps_actual is not None and not pd.isna(eps_actual) else None,
+                            epsEstimate=float(eps_est) if eps_est is not None and not pd.isna(eps_est) else None,
+                            revenueActual=None,
+                            revenueEstimate=None,
+                            surprise=surprise,
+                            isBeat=is_beat
+                        ))
+                except Exception as e:
+                    print(f"Error processing earnings date: {e}")
+                    continue
+            
+            # Limit history to last 8 quarters
+            history = history[:8]
+        
+        # Get calendar info for next earnings
+        if calendar is not None and not calendar.empty:
+            try:
+                if 'Earnings Date' in calendar.index:
+                    next_date = calendar.loc['Earnings Date']
+                    if isinstance(next_date, pd.Series) and len(next_date) > 0:
+                        next_date = next_date.iloc[0]
+                    if next_date is not None:
+                        next_earnings_date = str(next_date)[:10] if next_earnings_date is None else next_earnings_date
+            except:
+                pass
+        
+        # Determine fiscal quarter
+        if next_earnings_date:
+            try:
+                date = datetime.strptime(next_earnings_date, "%Y-%m-%d")
+                quarter = (date.month - 1) // 3 + 1
+                fiscal_quarter = f"Q{quarter} {date.year}"
+            except:
+                pass
+        
+        return StockEarnings(
+            symbol=symbol.upper(),
+            stockName=stock_name,
+            hasUpcoming=next_earnings_date is not None,
+            nextEarningsDate=next_earnings_date,
+            daysUntilEarnings=days_until,
+            nextEpsEstimate=eps_estimate,
+            nextRevenueEstimate=revenue_estimate,
+            fiscalQuarter=fiscal_quarter,
+            history=history
+        )
+        
+    except Exception as e:
+        print(f"Error fetching earnings for {symbol}: {e}")
+        return generate_mock_earnings(symbol)
+
+
+def generate_mock_earnings(symbol: str) -> StockEarnings:
+    """Generate mock earnings data when real data is unavailable"""
+    stock_name = STOCK_NAMES.get(symbol.upper(), symbol)
+    
+    # Generate realistic mock history
+    history = []
+    base_eps = random.uniform(0.5, 3.0)
+    
+    for i in range(4):
+        quarter_date = datetime.now() - timedelta(days=90 * (i + 1))
+        eps_estimate = round(base_eps + random.uniform(-0.2, 0.2), 2)
+        eps_actual = round(eps_estimate + random.uniform(-0.1, 0.15), 2)
+        surprise = round(((eps_actual - eps_estimate) / abs(eps_estimate)) * 100, 2) if eps_estimate != 0 else 0
+        
+        history.append(EarningsReport(
+            date=quarter_date.strftime("%Y-%m-%d"),
+            epsActual=eps_actual,
+            epsEstimate=eps_estimate,
+            revenueActual=None,
+            revenueEstimate=None,
+            surprise=surprise,
+            isBeat=eps_actual > eps_estimate
+        ))
+    
+    next_date = datetime.now() + timedelta(days=random.randint(15, 60))
+    
+    return StockEarnings(
+        symbol=symbol.upper(),
+        stockName=f"{stock_name} (Demo)",
+        hasUpcoming=True,
+        nextEarningsDate=next_date.strftime("%Y-%m-%d"),
+        daysUntilEarnings=(next_date - datetime.now()).days,
+        nextEpsEstimate=round(base_eps + random.uniform(-0.1, 0.1), 2),
+        nextRevenueEstimate=None,
+        fiscalQuarter=f"Q{(next_date.month - 1) // 3 + 1} {next_date.year}",
+        history=history
+    )
+
+
+@app.get("/earnings/{symbol}", response_model=StockEarnings)
+def get_stock_earnings(symbol: str):
+    """Get earnings information for a stock"""
+    return get_earnings_data(symbol.upper())
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
