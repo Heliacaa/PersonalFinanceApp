@@ -6,3 +6,6 @@ textblob==0.17.1
 python-multipart==0.0.9
 yfinance>=0.2.48
 requests>=2.31.0
+redis>=5.0.0
+httpx>=0.26.0
+groq>=0.4.0

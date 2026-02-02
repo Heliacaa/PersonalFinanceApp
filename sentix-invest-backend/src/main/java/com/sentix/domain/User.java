@@ -40,6 +40,8 @@ public class User implements UserDetails {
 
     private BigDecimal balance; // Simple balance tracking for now
 
+    private String fcmToken; // Firebase Cloud Messaging token for push notifications
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

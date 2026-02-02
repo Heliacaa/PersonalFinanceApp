@@ -21,8 +21,17 @@ services:
     build: ../mcp-server
     ports:
       - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - GNEWS_API_KEY=${GNEWS_API_KEY:-}
+      - FINNHUB_API_KEY=${FINNHUB_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - EXCHANGERATE_API_KEY=${EXCHANGERATE_API_KEY:-}
     volumes:
       - ../mcp-server:/app
+    depends_on:
+      - redis
 
   postgres:
     image: postgres:16-alpine

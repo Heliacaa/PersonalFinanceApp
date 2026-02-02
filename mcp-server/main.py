@@ -8,8 +8,79 @@ from textblob import TextBlob
 import yfinance as yf
 from datetime import datetime, timedelta
 import random
+import redis
+import json
+import os
+import httpx
 
-app = FastAPI(title="SentixInvest MCP Server", version="1.0.0")
+# ===== Redis Cache Configuration =====
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+
+# Initialize Redis client with connection pool
+try:
+    redis_client = redis.Redis(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=5
+    )
+    redis_client.ping()
+    print(f"✅ Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
+    REDIS_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ Redis not available: {e}. Running without caching.")
+    redis_client = None
+    REDIS_AVAILABLE = False
+
+# Cache TTL settings (in seconds)
+CACHE_TTL = {
+    "stock_quote": 60,          # 1 minute for real-time quotes
+    "market_summary": 60,       # 1 minute for market indices
+    "stock_history": 300,       # 5 minutes for historical data
+    "news": 900,                # 15 minutes for news
+    "dividends": 3600,          # 1 hour for dividend data
+    "earnings": 3600,           # 1 hour for earnings data
+    "risk": 1800,               # 30 minutes for risk metrics
+    "crypto": 60,               # 1 minute for crypto prices
+    "forex": 300,               # 5 minutes for forex rates
+    "economic_calendar": 1800,  # 30 minutes for economic events
+    "ai_analysis": 3600,        # 1 hour for AI analysis
+}
+
+# ===== Free API Keys (from environment variables) =====
+GNEWS_API_KEY = os.getenv("GNEWS_API_KEY", "")  # Free tier: 100 requests/day
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")  # Free tier: 60 calls/minute
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")  # Free tier available
+COINGECKO_API_URL = "https://api.coingecko.com/api/v3"  # No key needed for basic
+EXCHANGERATE_API_KEY = os.getenv("EXCHANGERATE_API_KEY", "")  # Free tier available
+
+def cache_get(key: str) -> Optional[Any]:
+    """Get value from cache"""
+    if not REDIS_AVAILABLE or redis_client is None:
+        return None
+    try:
+        value = redis_client.get(key)
+        if value:
+            return json.loads(value)
+    except Exception as e:
+        print(f"Cache get error for {key}: {e}")
+    return None
+
+def cache_set(key: str, value: Any, ttl_type: str = "stock_quote") -> bool:
+    """Set value in cache with TTL"""
+    if not REDIS_AVAILABLE or redis_client is None:
+        return False
+    try:
+        ttl = CACHE_TTL.get(ttl_type, 60)
+        redis_client.setex(key, ttl, json.dumps(value))
+        return True
+    except Exception as e:
+        print(f"Cache set error for {key}: {e}")
+    return False
+
+app = FastAPI(title="SentixInvest MCP Server", version="2.0.0")
 
 # ===== Sentiment Analysis Models =====
 class SentinelRequest(BaseModel):
@@ -260,20 +331,40 @@ def get_index_data(symbol: str, name: str) -> Optional[MarketIndex]:
 @app.get("/stock/{symbol}", response_model=StockQuote)
 def get_stock(symbol: str):
     """Get current stock quote by symbol (e.g., AAPL, THYAO.IS for Turkish stocks)"""
+    # Check cache first
+    cache_key = f"stock_quote:{symbol.upper()}"
+    cached = cache_get(cache_key)
+    if cached:
+        print(f"📦 Cache hit for {symbol}")
+        return StockQuote(**cached)
+    
     data = get_stock_data(symbol)
     if not data:
         raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+    
+    # Cache the result
+    cache_set(cache_key, data.model_dump(), "stock_quote")
     return data
 
 @app.get("/market-summary", response_model=MarketSummary)
 def get_market_summary():
     """Get market summary for BIST100, NASDAQ, and S&P500"""
-    return MarketSummary(
+    # Check cache first
+    cache_key = "market_summary"
+    cached = cache_get(cache_key)
+    if cached:
+        print("📦 Cache hit for market summary")
+        return MarketSummary(**cached)
+    
+    result = MarketSummary(
         bist100=get_index_data("XU100.IS", "BIST 100"),
         nasdaq=get_index_data("^IXIC", "NASDAQ Composite"),
         sp500=get_index_data("^GSPC", "S&P 500"),
         timestamp=datetime.now().isoformat()
     )
+    
+    cache_set(cache_key, result.model_dump(), "market_summary")
+    return result
 
 def get_mock_history_data(symbol: str, period: str) -> List[Dict[str, Any]]:
     """Generate mock historical data when Yahoo Finance is unavailable"""
@@ -508,25 +599,105 @@ def generate_news_for_stock(symbol: str, count: int = 5) -> List[StockNewsItem]:
 
 
 @app.get("/news/{symbol}", response_model=StockNewsResponse)
-def get_stock_news(symbol: str, count: int = 5):
+async def get_stock_news(symbol: str, count: int = 5):
     """
     Get news articles for a specific stock.
-    Returns simulated news data with sentiment analysis.
-    In production, this would integrate with a real news API like Finnhub or Alpha Vantage.
+    Uses GNews API for real news with TextBlob sentiment analysis.
+    Falls back to simulated news if API is unavailable.
     """
     symbol_upper = symbol.upper()
     stock_name = STOCK_NAMES.get(symbol_upper, symbol)
     
+    # Check cache first
+    cache_key = f"news:{symbol_upper}:{count}"
+    cached = cache_get(cache_key)
+    if cached:
+        print(f"📦 Cache hit for news {symbol}")
+        return StockNewsResponse(**cached)
+    
     # Limit count to reasonable range
     count = max(1, min(count, 10))
     
-    news = generate_news_for_stock(symbol_upper, count)
+    # Try to get real news from GNews API
+    news = await fetch_real_news(symbol_upper, stock_name, count)
     
-    return StockNewsResponse(
+    if not news:
+        # Fallback to simulated news
+        print(f"⚠️ Using simulated news for {symbol}")
+        news = generate_news_for_stock(symbol_upper, count)
+    
+    result = StockNewsResponse(
         symbol=symbol_upper,
         stockName=stock_name,
         news=news
     )
+    
+    cache_set(cache_key, result.model_dump(), "news")
+    return result
+
+
+async def fetch_real_news(symbol: str, stock_name: str, count: int = 5) -> List[StockNewsItem]:
+    """Fetch real news from GNews API with sentiment analysis"""
+    if not GNEWS_API_KEY:
+        print("⚠️ GNEWS_API_KEY not set, using simulated news")
+        return []
+    
+    try:
+        # Use stock name for better search results
+        search_query = stock_name.replace("Inc.", "").replace("Corporation", "").strip()
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = "https://gnews.io/api/v4/search"
+            params = {
+                "q": f"{search_query} stock",
+                "lang": "en",
+                "country": "us",
+                "max": count,
+                "apikey": GNEWS_API_KEY
+            }
+            
+            response = await client.get(url, params=params)
+            
+            if response.status_code != 200:
+                print(f"⚠️ GNews API error: {response.status_code}")
+                return []
+            
+            data = response.json()
+            articles = data.get("articles", [])
+            
+            news_items = []
+            for article in articles:
+                # Analyze sentiment of title and description
+                title = article.get("title", "")
+                description = article.get("description", "")
+                content = f"{title} {description}"
+                
+                analysis = TextBlob(content)
+                polarity = analysis.sentiment.polarity
+                
+                if polarity > 0.1:
+                    sentiment = "BULLISH"
+                elif polarity < -0.1:
+                    sentiment = "BEARISH"
+                else:
+                    sentiment = "NEUTRAL"
+                
+                news_items.append(StockNewsItem(
+                    title=title,
+                    summary=description or "No summary available",
+                    source=article.get("source", {}).get("name", "Unknown"),
+                    url=article.get("url", ""),
+                    publishedAt=article.get("publishedAt", datetime.now().isoformat()),
+                    sentiment=sentiment,
+                    sentimentScore=round(polarity, 2)
+                ))
+            
+            print(f"✅ Fetched {len(news_items)} real news articles for {symbol}")
+            return news_items
+            
+    except Exception as e:
+        print(f"❌ Error fetching news from GNews: {e}")
+        return []
 
 
 # ===== Risk Analysis Models =====
@@ -1074,7 +1245,633 @@ def generate_mock_earnings(symbol: str) -> StockEarnings:
 @app.get("/earnings/{symbol}", response_model=StockEarnings)
 def get_stock_earnings(symbol: str):
     """Get earnings information for a stock"""
-    return get_earnings_data(symbol.upper())
+    # Check cache first
+    cache_key = f"earnings:{symbol.upper()}"
+    cached = cache_get(cache_key)
+    if cached:
+        print(f"📦 Cache hit for earnings {symbol}")
+        return StockEarnings(**cached)
+    
+    result = get_earnings_data(symbol.upper())
+    cache_set(cache_key, result.model_dump(), "earnings")
+    return result
+
+
+# ===== Economic Calendar Models =====
+class EconomicEvent(BaseModel):
+    date: str
+    time: str
+    country: str
+    event: str
+    impact: str  # LOW, MEDIUM, HIGH
+    forecast: Optional[str] = None
+    previous: Optional[str] = None
+    actual: Optional[str] = None
+
+class EconomicCalendarResponse(BaseModel):
+    events: List[EconomicEvent]
+    fromDate: str
+    toDate: str
+
+
+@app.get("/calendar/economic", response_model=EconomicCalendarResponse)
+async def get_economic_calendar(days: int = 7):
+    """
+    Get economic calendar events for the next N days.
+    Uses Finnhub API for real economic events.
+    """
+    # Check cache first
+    cache_key = f"economic_calendar:{days}"
+    cached = cache_get(cache_key)
+    if cached:
+        print("📦 Cache hit for economic calendar")
+        return EconomicCalendarResponse(**cached)
+    
+    from_date = datetime.now()
+    to_date = from_date + timedelta(days=days)
+    
+    events = await fetch_economic_events(from_date, to_date)
+    
+    if not events:
+        events = generate_mock_economic_events(days)
+    
+    result = EconomicCalendarResponse(
+        events=events,
+        fromDate=from_date.strftime("%Y-%m-%d"),
+        toDate=to_date.strftime("%Y-%m-%d")
+    )
+    
+    cache_set(cache_key, result.model_dump(), "economic_calendar")
+    return result
+
+
+async def fetch_economic_events(from_date: datetime, to_date: datetime) -> List[EconomicEvent]:
+    """Fetch economic events from Finnhub API"""
+    if not FINNHUB_API_KEY:
+        print("⚠️ FINNHUB_API_KEY not set, using mock events")
+        return []
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = "https://finnhub.io/api/v1/calendar/economic"
+            params = {
+                "from": from_date.strftime("%Y-%m-%d"),
+                "to": to_date.strftime("%Y-%m-%d"),
+                "token": FINNHUB_API_KEY
+            }
+            
+            response = await client.get(url, params=params)
+            
+            if response.status_code != 200:
+                print(f"⚠️ Finnhub API error: {response.status_code}")
+                return []
+            
+            data = response.json()
+            raw_events = data.get("economicCalendar", [])
+            
+            events = []
+            for event in raw_events[:50]:  # Limit to 50 events
+                # Map impact level
+                impact_map = {1: "LOW", 2: "MEDIUM", 3: "HIGH"}
+                impact = impact_map.get(event.get("impact", 1), "MEDIUM")
+                
+                events.append(EconomicEvent(
+                    date=event.get("date", "")[:10],
+                    time=event.get("time", "00:00"),
+                    country=event.get("country", "US"),
+                    event=event.get("event", "Unknown Event"),
+                    impact=impact,
+                    forecast=str(event.get("estimate", "")) if event.get("estimate") else None,
+                    previous=str(event.get("prev", "")) if event.get("prev") else None,
+                    actual=str(event.get("actual", "")) if event.get("actual") else None
+                ))
+            
+            print(f"✅ Fetched {len(events)} economic events")
+            return events
+            
+    except Exception as e:
+        print(f"❌ Error fetching economic events: {e}")
+        return []
+
+
+def generate_mock_economic_events(days: int) -> List[EconomicEvent]:
+    """Generate mock economic events when API is unavailable"""
+    events = []
+    event_templates = [
+        {"event": "Federal Reserve Interest Rate Decision", "country": "US", "impact": "HIGH"},
+        {"event": "Non-Farm Payrolls", "country": "US", "impact": "HIGH"},
+        {"event": "Consumer Price Index (CPI)", "country": "US", "impact": "HIGH"},
+        {"event": "GDP Growth Rate", "country": "US", "impact": "HIGH"},
+        {"event": "Unemployment Rate", "country": "US", "impact": "MEDIUM"},
+        {"event": "Retail Sales", "country": "US", "impact": "MEDIUM"},
+        {"event": "ECB Interest Rate Decision", "country": "EU", "impact": "HIGH"},
+        {"event": "UK GDP", "country": "UK", "impact": "HIGH"},
+        {"event": "China Manufacturing PMI", "country": "CN", "impact": "MEDIUM"},
+        {"event": "Turkey Inflation Rate", "country": "TR", "impact": "MEDIUM"},
+    ]
+    
+    for i in range(min(days * 2, 15)):
+        event_date = datetime.now() + timedelta(days=random.randint(0, days))
+        template = random.choice(event_templates)
+        
+        events.append(EconomicEvent(
+            date=event_date.strftime("%Y-%m-%d"),
+            time=f"{random.randint(8, 16):02d}:{random.choice(['00', '30'])}",
+            country=template["country"],
+            event=f"{template['event']} (Demo)",
+            impact=template["impact"],
+            forecast=f"{random.uniform(-2, 5):.1f}%" if random.random() > 0.3 else None,
+            previous=f"{random.uniform(-2, 5):.1f}%",
+            actual=None
+        ))
+    
+    events.sort(key=lambda x: (x.date, x.time))
+    return events
+
+
+# ===== AI Stock Analysis Models =====
+class AIAnalysisResponse(BaseModel):
+    symbol: str
+    stockName: str
+    analysis: str
+    recommendation: str  # BUY, HOLD, SELL
+    confidence: float  # 0-100
+    keyPoints: List[str]
+    generatedAt: str
+
+
+@app.get("/ai/analyze/{symbol}", response_model=AIAnalysisResponse)
+async def get_ai_analysis(symbol: str):
+    """
+    Get AI-powered stock analysis using Groq LLM.
+    Combines fundamental data with LLM summary.
+    """
+    symbol_upper = symbol.upper()
+    
+    # Check cache first
+    cache_key = f"ai_analysis:{symbol_upper}"
+    cached = cache_get(cache_key)
+    if cached:
+        print(f"📦 Cache hit for AI analysis {symbol}")
+        return AIAnalysisResponse(**cached)
+    
+    stock_name = STOCK_NAMES.get(symbol_upper, symbol_upper)
+    
+    # Get stock data for context
+    stock_data = get_stock_data(symbol_upper)
+    
+    # Try to get AI analysis
+    analysis = await generate_ai_analysis(symbol_upper, stock_name, stock_data)
+    
+    cache_set(cache_key, analysis.model_dump(), "ai_analysis")
+    return analysis
+
+
+async def generate_ai_analysis(symbol: str, stock_name: str, stock_data: Optional[StockQuote]) -> AIAnalysisResponse:
+    """Generate AI analysis using Groq API"""
+    
+    # Build context from available data
+    price_info = ""
+    if stock_data:
+        price_info = f"Current Price: ${stock_data.price}, Change: {stock_data.changePercent}%"
+    
+    if GROQ_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                prompt = f"""Analyze {stock_name} ({symbol}) stock and provide a brief investment analysis.
+{price_info}
+
+Provide:
+1. A 2-3 sentence analysis of the stock
+2. A recommendation (BUY, HOLD, or SELL)
+3. Confidence level (0-100)
+4. 3 key bullet points
+
+Format your response as JSON with fields: analysis, recommendation, confidence, keyPoints (array of strings)"""
+
+                response = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {GROQ_API_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "llama-3.3-70b-versatile",
+                        "messages": [
+                            {"role": "system", "content": "You are a financial analyst. Provide brief, factual stock analysis. Always respond in valid JSON format."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        "temperature": 0.3,
+                        "max_tokens": 500
+                    }
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result["choices"][0]["message"]["content"]
+                    
+                    # Parse JSON from response
+                    try:
+                        # Try to extract JSON from the response
+                        import re
+                        json_match = re.search(r'\{[\s\S]*\}', content)
+                        if json_match:
+                            parsed = json.loads(json_match.group())
+                            
+                            return AIAnalysisResponse(
+                                symbol=symbol,
+                                stockName=stock_name,
+                                analysis=parsed.get("analysis", "Analysis not available"),
+                                recommendation=parsed.get("recommendation", "HOLD"),
+                                confidence=float(parsed.get("confidence", 50)),
+                                keyPoints=parsed.get("keyPoints", ["Data analysis in progress"]),
+                                generatedAt=datetime.now().isoformat()
+                            )
+                    except json.JSONDecodeError:
+                        print(f"⚠️ Could not parse AI response as JSON")
+                
+                print(f"⚠️ Groq API error: {response.status_code}")
+                
+        except Exception as e:
+            print(f"❌ Error calling Groq API: {e}")
+    
+    # Fallback to rule-based analysis
+    return generate_mock_ai_analysis(symbol, stock_name, stock_data)
+
+
+def generate_mock_ai_analysis(symbol: str, stock_name: str, stock_data: Optional[StockQuote]) -> AIAnalysisResponse:
+    """Generate mock AI analysis when API is unavailable"""
+    
+    # Simple rule-based analysis
+    if stock_data:
+        if stock_data.changePercent > 2:
+            recommendation = "HOLD"  # Already up, might be overbought
+            analysis = f"{stock_name} has shown strong momentum with a {stock_data.changePercent}% gain. Consider taking profits or holding for continued growth."
+            key_points = [
+                f"Stock is up {stock_data.changePercent}% recently",
+                "Strong momentum may continue",
+                "Consider setting stop-loss to protect gains"
+            ]
+        elif stock_data.changePercent < -2:
+            recommendation = "BUY"  # Potential dip buying opportunity
+            analysis = f"{stock_name} is down {abs(stock_data.changePercent)}%, which may present a buying opportunity if fundamentals remain strong."
+            key_points = [
+                f"Stock has declined {abs(stock_data.changePercent)}%",
+                "Potential value opportunity",
+                "Review fundamentals before buying"
+            ]
+        else:
+            recommendation = "HOLD"
+            analysis = f"{stock_name} is trading relatively flat. Monitor for breakout signals or accumulate on dips."
+            key_points = [
+                "Stock showing neutral momentum",
+                "Wait for clearer directional signals",
+                "Good for long-term accumulation"
+            ]
+    else:
+        recommendation = "HOLD"
+        analysis = f"Limited data available for {stock_name}. Conduct additional research before making investment decisions."
+        key_points = [
+            "Insufficient data for strong recommendation",
+            "Consider fundamental analysis",
+            "Monitor market conditions"
+        ]
+    
+    return AIAnalysisResponse(
+        symbol=symbol,
+        stockName=f"{stock_name} (Demo)",
+        analysis=analysis,
+        recommendation=recommendation,
+        confidence=round(random.uniform(55, 75), 1),
+        keyPoints=key_points,
+        generatedAt=datetime.now().isoformat()
+    )
+
+
+# ===== Cryptocurrency Models =====
+class CryptoQuote(BaseModel):
+    id: str
+    symbol: str
+    name: str
+    price: float
+    change24h: float
+    changePercent24h: float
+    marketCap: float
+    volume24h: float
+    rank: int
+    image: Optional[str] = None
+
+
+class CryptoMarketsResponse(BaseModel):
+    cryptocurrencies: List[CryptoQuote]
+    timestamp: str
+
+
+@app.get("/crypto/quote/{symbol}")
+async def get_crypto_quote(symbol: str):
+    """Get cryptocurrency quote by symbol (e.g., bitcoin, ethereum)"""
+    symbol_lower = symbol.lower()
+    
+    # Check cache first
+    cache_key = f"crypto_quote:{symbol_lower}"
+    cached = cache_get(cache_key)
+    if cached:
+        print(f"📦 Cache hit for crypto {symbol}")
+        return cached
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{COINGECKO_API_URL}/coins/{symbol_lower}",
+                params={
+                    "localization": "false",
+                    "tickers": "false",
+                    "community_data": "false",
+                    "developer_data": "false"
+                }
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                market_data = data.get("market_data", {})
+                
+                result = CryptoQuote(
+                    id=data.get("id", symbol_lower),
+                    symbol=data.get("symbol", symbol).upper(),
+                    name=data.get("name", symbol),
+                    price=market_data.get("current_price", {}).get("usd", 0),
+                    change24h=market_data.get("price_change_24h", 0),
+                    changePercent24h=market_data.get("price_change_percentage_24h", 0),
+                    marketCap=market_data.get("market_cap", {}).get("usd", 0),
+                    volume24h=market_data.get("total_volume", {}).get("usd", 0),
+                    rank=data.get("market_cap_rank", 0),
+                    image=data.get("image", {}).get("small")
+                )
+                
+                cache_set(cache_key, result.model_dump(), "crypto")
+                print(f"✅ Fetched crypto quote for {symbol}")
+                return result
+            
+            raise HTTPException(status_code=404, detail=f"Cryptocurrency {symbol} not found")
+            
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Request timeout")
+    except Exception as e:
+        print(f"❌ Error fetching crypto: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/crypto/markets", response_model=CryptoMarketsResponse)
+async def get_crypto_markets(limit: int = 20):
+    """Get top cryptocurrencies by market cap"""
+    # Check cache first
+    cache_key = f"crypto_markets:{limit}"
+    cached = cache_get(cache_key)
+    if cached:
+        print("📦 Cache hit for crypto markets")
+        return CryptoMarketsResponse(**cached)
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{COINGECKO_API_URL}/coins/markets",
+                params={
+                    "vs_currency": "usd",
+                    "order": "market_cap_desc",
+                    "per_page": min(limit, 100),
+                    "page": 1,
+                    "sparkline": "false"
+                }
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                cryptos = []
+                
+                for coin in data:
+                    cryptos.append(CryptoQuote(
+                        id=coin.get("id", ""),
+                        symbol=coin.get("symbol", "").upper(),
+                        name=coin.get("name", ""),
+                        price=coin.get("current_price", 0) or 0,
+                        change24h=coin.get("price_change_24h", 0) or 0,
+                        changePercent24h=coin.get("price_change_percentage_24h", 0) or 0,
+                        marketCap=coin.get("market_cap", 0) or 0,
+                        volume24h=coin.get("total_volume", 0) or 0,
+                        rank=coin.get("market_cap_rank", 0) or 0,
+                        image=coin.get("image")
+                    ))
+                
+                result = CryptoMarketsResponse(
+                    cryptocurrencies=cryptos,
+                    timestamp=datetime.now().isoformat()
+                )
+                
+                cache_set(cache_key, result.model_dump(), "crypto")
+                print(f"✅ Fetched {len(cryptos)} cryptocurrencies")
+                return result
+            
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch crypto markets")
+            
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Request timeout")
+    except Exception as e:
+        print(f"❌ Error fetching crypto markets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ===== Forex Currency Models =====
+class ForexRate(BaseModel):
+    currency: str
+    rate: float
+    name: str
+
+
+class ForexRatesResponse(BaseModel):
+    baseCurrency: str
+    rates: List[ForexRate]
+    timestamp: str
+
+
+class ForexConvertResponse(BaseModel):
+    fromCurrency: str
+    toCurrency: str
+    amount: float
+    result: float
+    rate: float
+    timestamp: str
+
+
+CURRENCY_NAMES = {
+    "USD": "US Dollar",
+    "EUR": "Euro",
+    "GBP": "British Pound",
+    "TRY": "Turkish Lira",
+    "JPY": "Japanese Yen",
+    "CHF": "Swiss Franc",
+    "CAD": "Canadian Dollar",
+    "AUD": "Australian Dollar",
+    "CNY": "Chinese Yuan",
+    "INR": "Indian Rupee",
+    "BRL": "Brazilian Real",
+    "RUB": "Russian Ruble",
+    "KRW": "South Korean Won",
+    "MXN": "Mexican Peso",
+    "SGD": "Singapore Dollar"
+}
+
+
+@app.get("/forex/rates", response_model=ForexRatesResponse)
+async def get_forex_rates(base: str = "USD"):
+    """Get forex rates for major currencies"""
+    base_upper = base.upper()
+    
+    # Check cache first
+    cache_key = f"forex_rates:{base_upper}"
+    cached = cache_get(cache_key)
+    if cached:
+        print(f"📦 Cache hit for forex rates {base}")
+        return ForexRatesResponse(**cached)
+    
+    rates = await fetch_forex_rates(base_upper)
+    
+    result = ForexRatesResponse(
+        baseCurrency=base_upper,
+        rates=rates,
+        timestamp=datetime.now().isoformat()
+    )
+    
+    cache_set(cache_key, result.model_dump(), "forex")
+    return result
+
+
+async def fetch_forex_rates(base: str) -> List[ForexRate]:
+    """Fetch forex rates from ExchangeRate API or fallback"""
+    
+    # Try ExchangeRate-API (free tier)
+    if EXCHANGERATE_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"https://v6.exchangerate-api.com/v6/{EXCHANGERATE_API_KEY}/latest/{base}"
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("result") == "success":
+                        raw_rates = data.get("conversion_rates", {})
+                        rates = []
+                        
+                        for currency in CURRENCY_NAMES.keys():
+                            if currency in raw_rates and currency != base:
+                                rates.append(ForexRate(
+                                    currency=currency,
+                                    rate=raw_rates[currency],
+                                    name=CURRENCY_NAMES[currency]
+                                ))
+                        
+                        print(f"✅ Fetched {len(rates)} forex rates for {base}")
+                        return rates
+        except Exception as e:
+            print(f"⚠️ Error fetching forex rates: {e}")
+    
+    # Fallback to free open API
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Use open.er-api.com (no key required)
+            response = await client.get(f"https://open.er-api.com/v6/latest/{base}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                raw_rates = data.get("rates", {})
+                rates = []
+                
+                for currency in CURRENCY_NAMES.keys():
+                    if currency in raw_rates and currency != base:
+                        rates.append(ForexRate(
+                            currency=currency,
+                            rate=round(raw_rates[currency], 4),
+                            name=CURRENCY_NAMES[currency]
+                        ))
+                
+                print(f"✅ Fetched {len(rates)} forex rates from open API")
+                return rates
+                
+    except Exception as e:
+        print(f"❌ Error fetching forex rates: {e}")
+    
+    # Mock fallback
+    return generate_mock_forex_rates(base)
+
+
+def generate_mock_forex_rates(base: str) -> List[ForexRate]:
+    """Generate mock forex rates"""
+    mock_rates_usd = {
+        "EUR": 0.92,
+        "GBP": 0.79,
+        "TRY": 34.25,
+        "JPY": 149.50,
+        "CHF": 0.88,
+        "CAD": 1.36,
+        "AUD": 1.53,
+        "CNY": 7.24,
+        "INR": 83.12,
+        "BRL": 4.97,
+        "RUB": 89.50,
+        "KRW": 1328.45,
+        "MXN": 17.15,
+        "SGD": 1.34
+    }
+    
+    rates = []
+    for currency, rate in mock_rates_usd.items():
+        if currency != base:
+            # Adjust rate if base is not USD
+            adjusted_rate = rate
+            if base != "USD" and base in mock_rates_usd:
+                adjusted_rate = rate / mock_rates_usd[base]
+            
+            rates.append(ForexRate(
+                currency=currency,
+                rate=round(adjusted_rate * (1 + random.uniform(-0.01, 0.01)), 4),
+                name=f"{CURRENCY_NAMES.get(currency, currency)} (Demo)"
+            ))
+    
+    return rates
+
+
+@app.get("/forex/convert", response_model=ForexConvertResponse)
+async def convert_currency(from_currency: str, to_currency: str, amount: float):
+    """Convert currency amount"""
+    from_upper = from_currency.upper()
+    to_upper = to_currency.upper()
+    
+    # Get rates for the from currency
+    rates_response = await get_forex_rates(from_upper)
+    
+    # Find the target rate
+    rate = None
+    for forex_rate in rates_response.rates:
+        if forex_rate.currency == to_upper:
+            rate = forex_rate.rate
+            break
+    
+    if rate is None:
+        if from_upper == to_upper:
+            rate = 1.0
+        else:
+            raise HTTPException(status_code=400, detail=f"Cannot convert {from_upper} to {to_upper}")
+    
+    result = round(amount * rate, 2)
+    
+    return ForexConvertResponse(
+        fromCurrency=from_upper,
+        toCurrency=to_upper,
+        amount=amount,
+        result=result,
+        rate=rate,
+        timestamp=datetime.now().isoformat()
+    )
 
 
 if __name__ == "__main__":

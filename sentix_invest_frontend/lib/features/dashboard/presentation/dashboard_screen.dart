@@ -7,6 +7,9 @@ import '../../watchlist/presentation/watchlist_screen.dart';
 import '../../payment/presentation/add_funds_screen.dart';
 import '../../alert/presentation/alerts_list_screen.dart';
 import '../../analytics/presentation/portfolio_analytics_screen.dart';
+import '../../economic_calendar/presentation/economic_calendar_screen.dart';
+import '../../crypto/presentation/crypto_screen.dart';
+import '../../forex/presentation/forex_screen.dart';
 import '../../../core/network/dio_client.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -338,7 +341,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            const Expanded(child: SizedBox()), // Empty space for symmetry
+            Expanded(
+              child: _buildActionCard(
+                icon: Icons.calendar_month,
+                label: 'Calendar',
+                color: const Color(0xFFE74C3C),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const EconomicCalendarScreen(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _buildActionCard(
+                icon: Icons.currency_bitcoin,
+                label: 'Crypto',
+                color: const Color(0xFFF39C12),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const CryptoScreen(),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildActionCard(
+                icon: Icons.currency_exchange,
+                label: 'Forex',
+                color: const Color(0xFF27AE60),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ForexScreen(),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ],

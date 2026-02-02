@@ -6,6 +6,7 @@ import com.sentix.domain.AlertType;
 import com.sentix.domain.PriceAlert;
 import com.sentix.domain.User;
 import com.sentix.infrastructure.persistence.PriceAlertRepository;
+import com.sentix.service.PushNotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,7 @@ public class PriceAlertService {
 
     private final PriceAlertRepository priceAlertRepository;
     private final StockService stockService;
+    private final PushNotificationService pushNotificationService;
 
     @Transactional
     public PriceAlertResponse createAlert(User user, CreateAlertRequest request) {
@@ -177,6 +179,9 @@ public class PriceAlertService {
                     triggeredAlerts.add(mapToResponse(alert));
                     log.info("Alert {} triggered for {} type {}",
                             alert.getId(), alert.getSymbol(), alert.getAlertType());
+                    
+                    // Send push notification
+                    sendPushNotificationForAlert(alert);
                 }
             } catch (Exception e) {
                 log.warn("Error checking alert {} for {}: {}",
@@ -185,6 +190,70 @@ public class PriceAlertService {
         }
 
         return triggeredAlerts;
+    }
+
+    /**
+     * Send push notification when an alert is triggered
+     */
+    private void sendPushNotificationForAlert(PriceAlert alert) {
+        User user = alert.getUser();
+        String fcmToken = user.getFcmToken();
+        
+        if (fcmToken == null || fcmToken.isBlank()) {
+            log.debug("No FCM token for user {}, skipping push notification", user.getId());
+            return;
+        }
+
+        try {
+            switch (alert.getAlertType()) {
+                case ABOVE, BELOW, PERCENT_CHANGE -> {
+                    StockQuoteDto quote = stockService.getStockQuote(alert.getSymbol());
+                    double currentPrice = quote != null ? quote.getPrice() : 0;
+                    pushNotificationService.sendPriceAlertNotification(
+                            fcmToken,
+                            alert.getSymbol(),
+                            alert.getStockName(),
+                            alert.getTargetPrice().doubleValue(),
+                            currentPrice,
+                            alert.getAlertType().name()
+                    );
+                }
+                case EARNINGS_REMINDER -> {
+                    Map<String, Object> earnings = stockService.getEarnings(alert.getSymbol());
+                    String earningsDate = earnings != null ? (String) earnings.get("nextEarningsDate") : "soon";
+                    int daysUntil = alert.getDaysNotice() != null ? alert.getDaysNotice() : 1;
+                    pushNotificationService.sendEarningsReminderNotification(
+                            fcmToken,
+                            alert.getSymbol(),
+                            alert.getStockName(),
+                            earningsDate,
+                            daysUntil
+                    );
+                }
+                case DIVIDEND_PAYMENT -> {
+                    Map<String, Object> dividends = stockService.getDividends(alert.getSymbol());
+                    double amount = 0;
+                    String paymentDate = "soon";
+                    if (dividends != null && dividends.containsKey("nextDividend")) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> nextDiv = (Map<String, Object>) dividends.get("nextDividend");
+                        if (nextDiv != null) {
+                            amount = ((Number) nextDiv.getOrDefault("amount", 0)).doubleValue();
+                            paymentDate = (String) nextDiv.getOrDefault("paymentDate", "soon");
+                        }
+                    }
+                    pushNotificationService.sendDividendNotification(
+                            fcmToken,
+                            alert.getSymbol(),
+                            alert.getStockName(),
+                            amount,
+                            paymentDate
+                    );
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to send push notification for alert {}: {}", alert.getId(), e.getMessage());
+        }
     }
 
     private PriceAlertResponse mapToResponse(PriceAlert alert) {
