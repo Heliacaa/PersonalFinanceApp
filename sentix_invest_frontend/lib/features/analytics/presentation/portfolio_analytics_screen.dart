@@ -3,6 +3,7 @@ import '../data/analytics_models.dart';
 import '../data/analytics_repository.dart';
 import '../../market/data/market_models.dart';
 import '../../market/presentation/stock_detail_screen.dart';
+import 'risk_analysis_widget.dart';
 
 class PortfolioAnalyticsScreen extends StatefulWidget {
   const PortfolioAnalyticsScreen({super.key});
@@ -12,7 +13,9 @@ class PortfolioAnalyticsScreen extends StatefulWidget {
       _PortfolioAnalyticsScreenState();
 }
 
-class _PortfolioAnalyticsScreenState extends State<PortfolioAnalyticsScreen> {
+class _PortfolioAnalyticsScreenState extends State<PortfolioAnalyticsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   final _analyticsRepository = AnalyticsRepository();
   PortfolioPerformance? _performance;
   bool _isLoading = true;
@@ -21,7 +24,14 @@ class _PortfolioAnalyticsScreenState extends State<PortfolioAnalyticsScreen> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadAnalytics();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadAnalytics() async {
@@ -74,12 +84,48 @@ class _PortfolioAnalyticsScreenState extends State<PortfolioAnalyticsScreen> {
           'Portfolio Analytics',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: const Color(0xFF6C5CE7),
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.grey,
+          tabs: const [
+            Tab(text: 'Performance', icon: Icon(Icons.trending_up, size: 18)),
+            Tab(text: 'Risk', icon: Icon(Icons.shield_outlined, size: 18)),
+          ],
+        ),
       ),
-      body: _buildBody(),
+      body: TabBarView(
+        controller: _tabController,
+        children: [_buildPerformanceTab(), _buildRiskTab()],
+      ),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildRiskTab() {
+    if (_performance == null || _performance!.allocationByStock.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.shield_outlined, size: 64, color: Colors.grey[600]),
+            const SizedBox(height: 16),
+            Text(
+              'No portfolio for risk analysis',
+              style: TextStyle(color: Colors.grey[400], fontSize: 18),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final symbols = _performance!.allocationByStock
+        .map((a) => a.symbol)
+        .toList();
+    return RiskAnalysisWidget(symbols: symbols);
+  }
+
+  Widget _buildPerformanceTab() {
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: Color(0xFF6C5CE7)),

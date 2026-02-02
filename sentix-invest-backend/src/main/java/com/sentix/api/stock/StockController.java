@@ -45,4 +45,24 @@ public class StockController {
         Map<String, Object> news = stockService.getStockNews(symbol, count);
         return ResponseEntity.ok(news);
     }
+
+    @GetMapping("/analytics/risk")
+    public ResponseEntity<Map<String, Object>> getPortfolioRisk(
+            @RequestParam String symbols) {
+        Map<String, Object> risk = stockService.getPortfolioRisk(symbols);
+        if (risk == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(risk);
+    }
+
+    @GetMapping("/dividends/{symbol}")
+    public ResponseEntity<Map<String, Object>> getStockDividends(
+            @PathVariable String symbol) {
+        Map<String, Object> dividends = stockService.getDividends(symbol);
+        if (dividends == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(dividends);
+    }
 }

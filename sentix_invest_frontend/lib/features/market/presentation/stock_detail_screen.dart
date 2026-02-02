@@ -7,6 +7,7 @@ import '../../portfolio/data/portfolio_models.dart';
 import '../../watchlist/data/watchlist_repository.dart';
 import '../../alert/presentation/create_alert_screen.dart';
 import '../../news/presentation/news_feed_widget.dart';
+import '../../dividends/presentation/dividend_widget.dart';
 import '../../../core/network/dio_client.dart';
 
 class StockDetailScreen extends StatefulWidget {
@@ -204,6 +205,9 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
             _buildStatistics(),
             const SizedBox(height: 24),
             _buildActionButtons(),
+            const SizedBox(height: 24),
+            // Dividends section
+            DividendWidget(symbol: widget.stock.symbol),
             const SizedBox(height: 24),
             // News section
             NewsFeedWidget(

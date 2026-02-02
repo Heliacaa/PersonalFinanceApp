@@ -150,7 +150,7 @@ class _NewsFeedWidgetState extends State<NewsFeedWidget> {
     }
 
     return GestureDetector(
-      onTap: () => _openUrl(news.url),
+      onTap: () => _showArticleDetail(news),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         padding: const EdgeInsets.all(16),
@@ -236,14 +236,112 @@ class _NewsFeedWidgetState extends State<NewsFeedWidget> {
     );
   }
 
-  void _openUrl(String url) {
-    // Show snackbar with the article source info
-    // In production, this would use url_launcher to open the URL
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Opening article...'),
-        backgroundColor: const Color(0xFF6C5CE7),
-        duration: const Duration(seconds: 2),
+  void _showArticleDetail(NewsItem news) {
+    Color sentimentColor;
+    IconData sentimentIcon;
+
+    if (news.isBullish) {
+      sentimentColor = const Color(0xFF00D9A5);
+      sentimentIcon = Icons.trending_up;
+    } else if (news.isBearish) {
+      sentimentColor = const Color(0xFFFF6B6B);
+      sentimentIcon = Icons.trending_down;
+    } else {
+      sentimentColor = Colors.grey;
+      sentimentIcon = Icons.trending_flat;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A2E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: sentimentColor.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(sentimentIcon, size: 16, color: sentimentColor),
+                      const SizedBox(width: 6),
+                      Text(
+                        news.sentiment,
+                        style: TextStyle(
+                          color: sentimentColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  news.source,
+                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  news.timeAgo,
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              news.title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              news.summary,
+              style: TextStyle(
+                color: Colors.grey[300],
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2D2D44),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.grey[500], size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'This is simulated news for demo purposes.',
+                      style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

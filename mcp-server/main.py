@@ -529,6 +529,390 @@ def get_stock_news(symbol: str, count: int = 5):
     )
 
 
+# ===== Risk Analysis Models =====
+class StockRiskMetrics(BaseModel):
+    symbol: str
+    stockName: str
+    beta: float  # Relative volatility vs market
+    volatility: float  # Annualized standard deviation
+    sharpeRatio: float  # Risk-adjusted return
+    maxDrawdown: float  # Maximum peak-to-trough decline
+    valueAtRisk: float  # 95% VaR
+    riskLevel: str  # LOW, MEDIUM, HIGH
+
+class PortfolioRiskResponse(BaseModel):
+    overallRisk: str  # LOW, MEDIUM, HIGH
+    portfolioBeta: float
+    portfolioVolatility: float
+    portfolioSharpeRatio: float
+    diversificationScore: float  # 0-100
+    correlationRisk: str
+    stockRisks: List[StockRiskMetrics]
+
+
+def calculate_risk_metrics(symbol: str, period: str = "1y") -> Optional[StockRiskMetrics]:
+    """Calculate risk metrics for a single stock"""
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=period)
+        
+        if hist.empty or len(hist) < 20:
+            return generate_mock_risk_metrics(symbol)
+        
+        # Calculate daily returns
+        returns = hist['Close'].pct_change().dropna()
+        
+        # Get S&P 500 for beta calculation
+        sp500 = yf.Ticker("^GSPC")
+        sp500_hist = sp500.history(period=period)
+        
+        if not sp500_hist.empty:
+            sp500_returns = sp500_hist['Close'].pct_change().dropna()
+            # Align dates
+            common_dates = returns.index.intersection(sp500_returns.index)
+            if len(common_dates) > 20:
+                stock_ret = returns.loc[common_dates]
+                market_ret = sp500_returns.loc[common_dates]
+                
+                # Beta = Cov(stock, market) / Var(market)
+                covariance = stock_ret.cov(market_ret)
+                market_variance = market_ret.var()
+                beta = covariance / market_variance if market_variance > 0 else 1.0
+            else:
+                beta = 1.0
+        else:
+            beta = 1.0
+        
+        # Annualized volatility (std * sqrt(252))
+        volatility = returns.std() * (252 ** 0.5) * 100
+        
+        # Sharpe Ratio (assume risk-free rate of 4%)
+        risk_free_rate = 0.04
+        annualized_return = returns.mean() * 252
+        sharpe_ratio = (annualized_return - risk_free_rate) / (returns.std() * (252 ** 0.5)) if returns.std() > 0 else 0
+        
+        # Maximum Drawdown
+        cumulative = (1 + returns).cumprod()
+        peak = cumulative.expanding(min_periods=1).max()
+        drawdown = (cumulative - peak) / peak
+        max_drawdown = abs(drawdown.min()) * 100
+        
+        # Value at Risk (95% confidence, 1-day)
+        var_95 = abs(returns.quantile(0.05)) * 100
+        
+        # Determine risk level
+        if volatility > 40 or abs(beta) > 1.5:
+            risk_level = "HIGH"
+        elif volatility > 25 or abs(beta) > 1.2:
+            risk_level = "MEDIUM"
+        else:
+            risk_level = "LOW"
+        
+        stock_name = STOCK_NAMES.get(symbol.upper(), symbol)
+        
+        return StockRiskMetrics(
+            symbol=symbol.upper(),
+            stockName=stock_name,
+            beta=round(beta, 2),
+            volatility=round(volatility, 2),
+            sharpeRatio=round(sharpe_ratio, 2),
+            maxDrawdown=round(max_drawdown, 2),
+            valueAtRisk=round(var_95, 2),
+            riskLevel=risk_level
+        )
+        
+    except Exception as e:
+        print(f"Error calculating risk for {symbol}: {e}")
+        return generate_mock_risk_metrics(symbol)
+
+
+def generate_mock_risk_metrics(symbol: str) -> StockRiskMetrics:
+    """Generate mock risk metrics when real data is unavailable"""
+    stock_name = STOCK_NAMES.get(symbol.upper(), symbol)
+    
+    # Generate realistic mock values based on stock type
+    if ".IS" in symbol.upper():
+        # Turkish stocks typically higher volatility
+        beta = round(random.uniform(0.8, 1.5), 2)
+        volatility = round(random.uniform(30, 50), 2)
+    elif symbol.upper() in ["AAPL", "MSFT", "GOOGL", "JNJ", "V"]:
+        # Large cap tech, more stable
+        beta = round(random.uniform(0.9, 1.3), 2)
+        volatility = round(random.uniform(20, 35), 2)
+    else:
+        beta = round(random.uniform(1.0, 1.6), 2)
+        volatility = round(random.uniform(25, 45), 2)
+    
+    sharpe_ratio = round(random.uniform(-0.5, 2.0), 2)
+    max_drawdown = round(random.uniform(10, 40), 2)
+    var_95 = round(random.uniform(2, 6), 2)
+    
+    if volatility > 40:
+        risk_level = "HIGH"
+    elif volatility > 25:
+        risk_level = "MEDIUM"
+    else:
+        risk_level = "LOW"
+    
+    return StockRiskMetrics(
+        symbol=symbol.upper(),
+        stockName=f"{stock_name} (Demo)",
+        beta=beta,
+        volatility=volatility,
+        sharpeRatio=sharpe_ratio,
+        maxDrawdown=max_drawdown,
+        valueAtRisk=var_95,
+        riskLevel=risk_level
+    )
+
+
+@app.get("/analytics/risk", response_model=PortfolioRiskResponse)
+def get_portfolio_risk(symbols: str):
+    """
+    Get risk analysis for a portfolio of stocks.
+    Pass symbols as comma-separated string, e.g., ?symbols=AAPL,MSFT,GOOGL
+    """
+    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    
+    if not symbol_list:
+        raise HTTPException(status_code=400, detail="No symbols provided")
+    
+    stock_risks = []
+    total_beta = 0
+    total_volatility = 0
+    high_risk_count = 0
+    
+    for symbol in symbol_list:
+        risk = calculate_risk_metrics(symbol)
+        if risk:
+            stock_risks.append(risk)
+            total_beta += risk.beta
+            total_volatility += risk.volatility
+            if risk.riskLevel == "HIGH":
+                high_risk_count += 1
+    
+    if not stock_risks:
+        raise HTTPException(status_code=404, detail="No risk data available")
+    
+    n = len(stock_risks)
+    avg_beta = total_beta / n
+    avg_volatility = total_volatility / n
+    
+    # Portfolio diversification reduces volatility
+    diversification_benefit = 1 - (0.05 * (n - 1)) if n > 1 else 1
+    portfolio_volatility = avg_volatility * max(0.5, diversification_benefit)
+    
+    # Simplified Sharpe calculation
+    avg_sharpe = sum(r.sharpeRatio for r in stock_risks) / n
+    
+    # Diversification score (more stocks = better, up to a point)
+    diversification_score = min(100, 30 + (n * 15))
+    
+    # Correlation risk
+    if n == 1:
+        correlation_risk = "HIGH"
+    elif n < 3:
+        correlation_risk = "MEDIUM"
+    else:
+        correlation_risk = "LOW"
+    
+    # Overall risk level
+    if high_risk_count > n / 2 or portfolio_volatility > 35:
+        overall_risk = "HIGH"
+    elif high_risk_count > 0 or portfolio_volatility > 25:
+        overall_risk = "MEDIUM"
+    else:
+        overall_risk = "LOW"
+    
+    return PortfolioRiskResponse(
+        overallRisk=overall_risk,
+        portfolioBeta=round(avg_beta, 2),
+        portfolioVolatility=round(portfolio_volatility, 2),
+        portfolioSharpeRatio=round(avg_sharpe, 2),
+        diversificationScore=round(diversification_score, 1),
+        correlationRisk=correlation_risk,
+        stockRisks=stock_risks
+    )
+
+
+# ===== Dividend Tracker Models =====
+class DividendPayment(BaseModel):
+    exDate: str
+    paymentDate: str
+    amount: float
+    currency: str
+
+class StockDividend(BaseModel):
+    symbol: str
+    stockName: str
+    hasDividends: bool
+    annualYield: float  # Dividend yield percentage
+    annualDividend: float  # Total annual dividend per share
+    payoutFrequency: str  # QUARTERLY, MONTHLY, ANNUALLY, IRREGULAR
+    lastDividend: Optional[DividendPayment] = None
+    nextDividend: Optional[DividendPayment] = None
+    history: List[DividendPayment]
+
+
+def get_dividend_data(symbol: str) -> StockDividend:
+    """Get dividend information for a stock"""
+    stock_name = STOCK_NAMES.get(symbol.upper(), symbol)
+    
+    try:
+        ticker = yf.Ticker(symbol)
+        dividends = ticker.dividends
+        info = ticker.info
+        
+        if dividends.empty:
+            return StockDividend(
+                symbol=symbol.upper(),
+                stockName=stock_name,
+                hasDividends=False,
+                annualYield=0,
+                annualDividend=0,
+                payoutFrequency="NONE",
+                lastDividend=None,
+                nextDividend=None,
+                history=[]
+            )
+        
+        # Get recent dividend history (last 2 years)
+        recent_dividends = dividends.tail(8)
+        history = []
+        
+        for date, amount in recent_dividends.items():
+            history.append(DividendPayment(
+                exDate=date.strftime("%Y-%m-%d"),
+                paymentDate=date.strftime("%Y-%m-%d"),  # yfinance doesn't always have payment date
+                amount=round(float(amount), 4),
+                currency="USD"
+            ))
+        
+        history.reverse()  # Most recent first
+        
+        # Calculate annual dividend and yield
+        annual_dividend = info.get("dividendRate", 0) or 0
+        dividend_yield = info.get("dividendYield", 0) or 0
+        
+        # Determine payout frequency
+        if len(recent_dividends) >= 4:
+            # Calculate average gap between payments
+            dates = list(recent_dividends.index)
+            if len(dates) >= 2:
+                gaps = []
+                for i in range(1, len(dates)):
+                    gap = (dates[i] - dates[i-1]).days
+                    gaps.append(gap)
+                avg_gap = sum(gaps) / len(gaps)
+                
+                if avg_gap < 45:
+                    payout_frequency = "MONTHLY"
+                elif avg_gap < 120:
+                    payout_frequency = "QUARTERLY"
+                elif avg_gap < 200:
+                    payout_frequency = "SEMI_ANNUALLY"
+                else:
+                    payout_frequency = "ANNUALLY"
+            else:
+                payout_frequency = "IRREGULAR"
+        else:
+            payout_frequency = "IRREGULAR"
+        
+        last_dividend = history[0] if history else None
+        
+        # Estimate next dividend (add typical gap to last)
+        next_dividend = None
+        if last_dividend and payout_frequency in ["QUARTERLY", "MONTHLY"]:
+            from datetime import datetime
+            last_date = datetime.strptime(last_dividend.exDate, "%Y-%m-%d")
+            if payout_frequency == "QUARTERLY":
+                next_date = last_date + timedelta(days=90)
+            else:
+                next_date = last_date + timedelta(days=30)
+            
+            if next_date > datetime.now():
+                next_dividend = DividendPayment(
+                    exDate=next_date.strftime("%Y-%m-%d"),
+                    paymentDate=(next_date + timedelta(days=7)).strftime("%Y-%m-%d"),
+                    amount=last_dividend.amount,
+                    currency="USD"
+                )
+        
+        return StockDividend(
+            symbol=symbol.upper(),
+            stockName=stock_name,
+            hasDividends=True,
+            annualYield=round(dividend_yield * 100, 2),
+            annualDividend=round(annual_dividend, 4),
+            payoutFrequency=payout_frequency,
+            lastDividend=last_dividend,
+            nextDividend=next_dividend,
+            history=history
+        )
+        
+    except Exception as e:
+        print(f"Error fetching dividends for {symbol}: {e}")
+        return generate_mock_dividend(symbol)
+
+
+def generate_mock_dividend(symbol: str) -> StockDividend:
+    """Generate mock dividend data when real data is unavailable"""
+    stock_name = STOCK_NAMES.get(symbol.upper(), symbol)
+    
+    # Known dividend payers
+    dividend_stocks = ["AAPL", "MSFT", "JNJ", "V", "JPM", "KO", "PG", "XOM"]
+    
+    if symbol.upper() in dividend_stocks:
+        base_date = datetime.now() - timedelta(days=30)
+        history = []
+        for i in range(4):
+            div_date = base_date - timedelta(days=i * 90)
+            amount = round(random.uniform(0.2, 1.0), 4)
+            history.append(DividendPayment(
+                exDate=div_date.strftime("%Y-%m-%d"),
+                paymentDate=(div_date + timedelta(days=7)).strftime("%Y-%m-%d"),
+                amount=amount,
+                currency="USD"
+            ))
+        
+        return StockDividend(
+            symbol=symbol.upper(),
+            stockName=f"{stock_name} (Demo)",
+            hasDividends=True,
+            annualYield=round(random.uniform(0.5, 4.0), 2),
+            annualDividend=round(history[0].amount * 4, 2),
+            payoutFrequency="QUARTERLY",
+            lastDividend=history[0],
+            nextDividend=DividendPayment(
+                exDate=(datetime.now() + timedelta(days=60)).strftime("%Y-%m-%d"),
+                paymentDate=(datetime.now() + timedelta(days=67)).strftime("%Y-%m-%d"),
+                amount=history[0].amount,
+                currency="USD"
+            ),
+            history=history
+        )
+    else:
+        return StockDividend(
+            symbol=symbol.upper(),
+            stockName=f"{stock_name} (Demo)",
+            hasDividends=False,
+            annualYield=0,
+            annualDividend=0,
+            payoutFrequency="NONE",
+            lastDividend=None,
+            nextDividend=None,
+            history=[]
+        )
+
+
+@app.get("/dividends/{symbol}", response_model=StockDividend)
+def get_stock_dividends(symbol: str):
+    """Get dividend information for a stock"""
+    return get_dividend_data(symbol.upper())
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
 

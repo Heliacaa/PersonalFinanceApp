@@ -130,6 +130,39 @@ public class StockService {
         }
     }
 
+    public Map<String, Object> getPortfolioRisk(String symbols) {
+        try {
+            return getMcpClient()
+                    .get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/analytics/risk")
+                            .queryParam("symbols", symbols)
+                            .build())
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .timeout(Duration.ofSeconds(30))
+                    .block();
+        } catch (Exception e) {
+            log.error("Error fetching portfolio risk for {}: {}", symbols, e.getMessage());
+            return null;
+        }
+    }
+
+    public Map<String, Object> getDividends(String symbol) {
+        try {
+            return getMcpClient()
+                    .get()
+                    .uri("/dividends/{symbol}", symbol)
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .timeout(Duration.ofSeconds(15))
+                    .block();
+        } catch (Exception e) {
+            log.error("Error fetching dividends for {}: {}", symbol, e.getMessage());
+            return null;
+        }
+    }
+
     private MarketIndexDto mapToMarketIndex(Map<String, Object> data) {
         if (data == null) {
             return null;
