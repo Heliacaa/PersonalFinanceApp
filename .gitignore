@@ -2,6 +2,8 @@
 .DS_Store
 .env
 .env.local
+.env.*
+!.env.example
 .vscode/
 .idea/
 *.iws
@@ -25,6 +27,7 @@ target/
 ### Flutter / Frontend ###
 .dart_tool/
 .flutter-plugins-dependencies
+.flutter-plugins
 .pub-cache/
 .pub/
 build/
@@ -42,3 +45,8 @@ __pycache__/
 venv/
 .venv/
 env/
+
+### Firebase / Mobile credentials ###
+**/firebase-service-account.json
+**/google-services.json
+**/GoogleService-Info.plist
