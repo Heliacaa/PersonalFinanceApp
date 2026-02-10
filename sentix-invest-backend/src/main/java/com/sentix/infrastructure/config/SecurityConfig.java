@@ -43,10 +43,12 @@ public class SecurityConfig {
                                                                 "/api/v1/crypto/**",
                                                                 "/api/v1/forex/**",
                                                                 "/api/v1/calendar/**",
-                                                                "/api/v1/ai/**",
+                                                                "/api/v1/ai/analyze/**",
+                                                                "/api/v1/ai/rag/status",
                                                                 "/api/v1/payments/callback",
                                                                 "/api/v1/payments/callback-page")
                                                 .permitAll()
+                                                .requestMatchers("/api/v1/ai/chat").authenticated()
                                                 .anyRequest().authenticated())
                                 .sessionManagement(session -> session
                                                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))

@@ -10,6 +10,7 @@ import '../../analytics/presentation/portfolio_analytics_screen.dart';
 import '../../economic_calendar/presentation/economic_calendar_screen.dart';
 import '../../crypto/presentation/crypto_screen.dart';
 import '../../forex/presentation/forex_screen.dart';
+import '../../ai_analysis/presentation/ai_chat_screen.dart';
 import '../../../core/network/dio_client.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -98,6 +99,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
             )
           : null,
       body: _getCurrentScreen(),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AIChatScreen()),
+          );
+        },
+        backgroundColor: const Color(0xFF6C5CE7),
+        child: const Icon(Icons.auto_awesome, color: Colors.white),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {

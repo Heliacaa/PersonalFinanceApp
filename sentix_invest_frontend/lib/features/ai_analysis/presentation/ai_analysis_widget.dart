@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/ai_analysis_models.dart';
 import '../data/ai_analysis_repository.dart';
+import 'ai_chat_screen.dart';
 
 class AIAnalysisWidget extends StatefulWidget {
   final String symbol;
@@ -305,6 +306,44 @@ class _AIAnalysisWidgetState extends State<AIAnalysisWidget> {
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Ask AI Chat Button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AIChatScreen(
+                      symbol: widget.symbol,
+                      stockName: analysis.stockName,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(
+                Icons.chat_bubble_outline,
+                size: 18,
+                color: Color(0xFF6C5CE7),
+              ),
+              label: Text(
+                'Ask AI about ${widget.symbol}',
+                style: const TextStyle(
+                  color: Color(0xFF6C5CE7),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFF6C5CE7), width: 1),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
             ),
           ),
         ],

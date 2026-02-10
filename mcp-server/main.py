@@ -12,6 +12,12 @@ import redis
 import json
 import os
 import httpx
+import logging
+from contextlib import asynccontextmanager
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ===== Redis Cache Configuration =====
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
@@ -56,6 +62,47 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")  # Free tier available
 COINGECKO_API_URL = "https://api.coingecko.com/api/v3"  # No key needed for basic
 EXCHANGERATE_API_KEY = os.getenv("EXCHANGERATE_API_KEY", "")  # Free tier available
 
+# ===== RAG Configuration =====
+RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() == "true"
+
+# Initialize RAG components (lazy, only if enabled)
+rag_retriever = None
+rag_ingestion = None
+rag_embedding_service = None
+rag_vector_store = None
+
+def initialize_rag():
+    """Initialize RAG components. Gracefully degrades if unavailable."""
+    global rag_retriever, rag_ingestion, rag_embedding_service, rag_vector_store
+    if not RAG_ENABLED:
+        logger.info("⏭️ RAG is disabled via RAG_ENABLED=false")
+        return
+
+    try:
+        from rag.embeddings import EmbeddingService
+        from rag.vector_store import VectorStore
+        from rag.retriever import RAGRetriever
+        from rag.ingestion import IngestionPipeline
+
+        rag_embedding_service = EmbeddingService()
+        rag_vector_store = VectorStore()
+        rag_vector_store.initialize()
+
+        if rag_embedding_service.is_available and rag_vector_store.is_available:
+            rag_retriever = RAGRetriever(rag_embedding_service, rag_vector_store)
+            rag_ingestion = IngestionPipeline(rag_embedding_service, rag_vector_store)
+
+            # Seed financial education content on first run
+            rag_ingestion.ingest_financial_education()
+
+            logger.info("✅ RAG system initialized successfully")
+        else:
+            logger.warning("⚠️ RAG components partially unavailable, running without RAG")
+    except Exception as e:
+        logger.error(f"❌ RAG initialization failed: {e}. Running without RAG.")
+        rag_retriever = None
+        rag_ingestion = None
+
 def cache_get(key: str) -> Optional[Any]:
     """Get value from cache"""
     if not REDIS_AVAILABLE or redis_client is None:
@@ -80,7 +127,13 @@ def cache_set(key: str, value: Any, ttl_type: str = "stock_quote") -> bool:
         print(f"Cache set error for {key}: {e}")
     return False
 
-app = FastAPI(title="SentixInvest MCP Server", version="2.0.0")
+@asynccontextmanager
+async def lifespan(app):
+    """Application lifespan: initialize RAG on startup."""
+    initialize_rag()
+    yield
+
+app = FastAPI(title="SentixInvest MCP Server", version="2.0.0", lifespan=lifespan)
 
 # ===== Sentiment Analysis Models =====
 class SentinelRequest(BaseModel):
@@ -633,6 +686,15 @@ async def get_stock_news(symbol: str, count: int = 5):
     )
     
     cache_set(cache_key, result.model_dump(), "news")
+
+    # RAG: Ingest news articles into vector store (best-effort, non-blocking)
+    if rag_ingestion and news:
+        try:
+            news_dicts = [n.model_dump() for n in news]
+            rag_ingestion.ingest_news_articles(news_dicts, symbol_upper)
+        except Exception as e:
+            logger.warning(f"RAG news ingestion failed for {symbol_upper}: {e}")
+
     return result
 
 
@@ -1404,7 +1466,7 @@ class AIAnalysisResponse(BaseModel):
 async def get_ai_analysis(symbol: str):
     """
     Get AI-powered stock analysis using Groq LLM.
-    Combines fundamental data with LLM summary.
+    Enhanced with RAG: retrieves relevant news, research, and education context.
     """
     symbol_upper = symbol.upper()
     
@@ -1419,6 +1481,18 @@ async def get_ai_analysis(symbol: str):
     
     # Get stock data for context
     stock_data = get_stock_data(symbol_upper)
+
+    # Try to ingest fresh research data for RAG (non-blocking best-effort)
+    if rag_ingestion:
+        try:
+            risk = calculate_risk_metrics(symbol_upper)
+            risk_dict = risk.model_dump() if risk else None
+            rag_ingestion.ingest_market_research(
+                symbol=symbol_upper,
+                risk_data=risk_dict,
+            )
+        except Exception as e:
+            logger.warning(f"RAG research ingestion skipped: {e}")
     
     # Try to get AI analysis
     analysis = await generate_ai_analysis(symbol_upper, stock_name, stock_data)
@@ -1428,18 +1502,44 @@ async def get_ai_analysis(symbol: str):
 
 
 async def generate_ai_analysis(symbol: str, stock_name: str, stock_data: Optional[StockQuote]) -> AIAnalysisResponse:
-    """Generate AI analysis using Groq API"""
+    """Generate AI analysis using Groq API, enriched with RAG context."""
     
     # Build context from available data
     price_info = ""
     if stock_data:
         price_info = f"Current Price: ${stock_data.price}, Change: {stock_data.changePercent}%"
+
+    # RAG: Retrieve relevant context from vector store
+    rag_context = ""
+    if rag_retriever and rag_retriever.is_available:
+        try:
+            rag_context = rag_retriever.build_context_string(
+                query=f"{stock_name} ({symbol}) stock analysis investment outlook",
+                symbol=symbol,
+                top_k=5,
+                max_context_chars=2000,
+            )
+            if rag_context:
+                logger.info(f"RAG: injected {len(rag_context)} chars of context for {symbol}")
+        except Exception as e:
+            logger.warning(f"RAG retrieval failed for {symbol}: {e}")
+            rag_context = ""
     
     if GROQ_API_KEY:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
+                # Build enhanced prompt with RAG context
+                rag_section = ""
+                if rag_context:
+                    rag_section = f"""
+### Relevant Context (from recent news, research, and financial knowledge):
+{rag_context}
+
+Use the above context to inform your analysis where relevant."""
+
                 prompt = f"""Analyze {stock_name} ({symbol}) stock and provide a brief investment analysis.
 {price_info}
+{rag_section}
 
 Provide:
 1. A 2-3 sentence analysis of the stock
@@ -1458,7 +1558,7 @@ Format your response as JSON with fields: analysis, recommendation, confidence, 
                     json={
                         "model": "llama-3.3-70b-versatile",
                         "messages": [
-                            {"role": "system", "content": "You are a financial analyst. Provide brief, factual stock analysis. Always respond in valid JSON format."},
+                            {"role": "system", "content": "You are a financial analyst. Provide brief, factual stock analysis. Always respond in valid JSON format. Use any provided context to enhance your analysis."},
                             {"role": "user", "content": prompt}
                         ],
                         "temperature": 0.3,
@@ -1546,6 +1646,216 @@ def generate_mock_ai_analysis(symbol: str, stock_name: str, stock_data: Optional
         keyPoints=key_points,
         generatedAt=datetime.now().isoformat()
     )
+
+
+# ===== RAG Chat Models & Endpoints =====
+
+class ChatRequest(BaseModel):
+    message: str
+    symbol: Optional[str] = None
+    session_id: str
+    user_context: Optional[Dict[str, Any]] = None  # portfolio, watchlist
+
+class ChatSource(BaseModel):
+    title: str
+    source_type: str
+    symbol: Optional[str] = None
+    score: float = 0.0
+
+class ChatResponse(BaseModel):
+    response: str
+    sources: List[ChatSource]
+    session_id: str
+
+class RAGStatusResponse(BaseModel):
+    enabled: bool
+    embedding_available: bool
+    vector_store_available: bool
+    document_counts: Dict[str, int]
+
+class IngestRequest(BaseModel):
+    source_type: str  # NEWS, EDUCATION, RESEARCH
+    symbols: Optional[List[str]] = None
+
+class IngestResponse(BaseModel):
+    ingested_count: int
+    source_type: str
+
+
+@app.post("/ai/chat", response_model=ChatResponse)
+async def ai_chat(request: ChatRequest):
+    """
+    Conversational AI chat with RAG context.
+    Retrieves relevant documents and portfolio context to answer financial questions.
+    """
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=503, detail="AI service not configured")
+
+    # Get RAG context
+    rag_context = ""
+    sources = []
+    if rag_retriever and rag_retriever.is_available:
+        try:
+            rag_context, raw_sources = rag_retriever.build_context_with_sources(
+                query=request.message,
+                symbol=request.symbol.upper() if request.symbol else None,
+                top_k=5,
+                max_context_chars=2500,
+            )
+            sources = [
+                ChatSource(
+                    title=s["title"],
+                    source_type=s["source_type"],
+                    symbol=s.get("symbol"),
+                    score=s.get("score", 0),
+                )
+                for s in raw_sources
+            ]
+        except Exception as e:
+            logger.warning(f"RAG retrieval failed for chat: {e}")
+
+    # Get user portfolio context
+    user_context_str = ""
+    if rag_retriever and request.user_context:
+        try:
+            user_context_str = rag_retriever.format_user_context(request.user_context)
+        except Exception as e:
+            logger.warning(f"Failed to format user context: {e}")
+
+    # Get chat history
+    history_messages = []
+    if rag_vector_store and rag_vector_store.is_available:
+        try:
+            history = rag_vector_store.get_chat_history(request.session_id, limit=10)
+            for msg in history:
+                history_messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"],
+                })
+        except Exception as e:
+            logger.warning(f"Failed to load chat history: {e}")
+
+    # Build system prompt
+    system_parts = [
+        "You are SentixAI, a knowledgeable financial assistant for the SentixInvest platform.",
+        "Provide helpful, accurate, and concise answers about stocks, investing, portfolio management, and financial concepts.",
+        "Always include a disclaimer that your responses are for informational purposes only and not financial advice.",
+    ]
+    if rag_context:
+        system_parts.append(f"\n### Relevant Knowledge Base Context:\n{rag_context}")
+    if user_context_str:
+        system_parts.append(f"\n### User's Investment Context:\n{user_context_str}")
+
+    system_prompt = "\n".join(system_parts)
+
+    # Build messages for Groq
+    symbol_context = f" about {request.symbol.upper()}" if request.symbol else ""
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend(history_messages[-8:])  # Last 8 messages for context window
+    messages.append({"role": "user", "content": request.message})
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": messages,
+                    "temperature": 0.4,
+                    "max_tokens": 800,
+                },
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                ai_response = result["choices"][0]["message"]["content"]
+
+                # Store chat messages in history
+                if rag_vector_store and rag_vector_store.is_available:
+                    try:
+                        user_id = request.user_context.get("userId", "anonymous") if request.user_context else "anonymous"
+                        rag_vector_store.store_chat_message(
+                            user_id=user_id,
+                            session_id=request.session_id,
+                            role="user",
+                            content=request.message,
+                        )
+                        rag_vector_store.store_chat_message(
+                            user_id=user_id,
+                            session_id=request.session_id,
+                            role="assistant",
+                            content=ai_response,
+                            sources=[s.model_dump() for s in sources],
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to store chat history: {e}")
+
+                return ChatResponse(
+                    response=ai_response,
+                    sources=sources,
+                    session_id=request.session_id,
+                )
+
+            raise HTTPException(status_code=response.status_code, detail="AI service error")
+
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="AI service timeout")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        raise HTTPException(status_code=500, detail="Internal AI service error")
+
+
+@app.get("/ai/rag/status", response_model=RAGStatusResponse)
+async def get_rag_status():
+    """Get the current status of the RAG system."""
+    doc_counts = {}
+    if rag_vector_store and rag_vector_store.is_available:
+        for source_type in ["NEWS", "EDUCATION", "RESEARCH"]:
+            doc_counts[source_type] = rag_vector_store.get_document_count(source_type=source_type)
+        doc_counts["TOTAL"] = sum(doc_counts.values())
+
+    return RAGStatusResponse(
+        enabled=RAG_ENABLED,
+        embedding_available=rag_embedding_service.is_available if rag_embedding_service else False,
+        vector_store_available=rag_vector_store.is_available if rag_vector_store else False,
+        document_counts=doc_counts,
+    )
+
+
+@app.post("/ai/rag/ingest", response_model=IngestResponse)
+async def trigger_ingestion(request: IngestRequest):
+    """Manually trigger document ingestion into the RAG vector store."""
+    if not rag_ingestion:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    count = 0
+    source_type = request.source_type.upper()
+
+    if source_type == "EDUCATION":
+        count = rag_ingestion.ingest_financial_education()
+    elif source_type == "RESEARCH" and request.symbols:
+        for symbol in request.symbols:
+            try:
+                risk = calculate_risk_metrics(symbol.upper())
+                risk_dict = risk.model_dump() if risk else None
+                count += rag_ingestion.ingest_market_research(
+                    symbol=symbol.upper(),
+                    risk_data=risk_dict,
+                )
+            except Exception as e:
+                logger.warning(f"Research ingestion failed for {symbol}: {e}")
+    elif source_type == "CLEANUP":
+        count = rag_ingestion.cleanup_expired()
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported source_type: {source_type}")
+
+    return IngestResponse(ingested_count=count, source_type=source_type)
 
 
 # ===== Cryptocurrency Models =====

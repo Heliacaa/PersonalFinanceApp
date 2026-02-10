@@ -28,13 +28,17 @@ services:
       - FINNHUB_API_KEY=${FINNHUB_API_KEY:-}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - EXCHANGERATE_API_KEY=${EXCHANGERATE_API_KEY:-}
+      - RAG_ENABLED=true
+      - DATABASE_URL=postgresql://sentix:sentix_password@postgres:5432/sentixdb
     volumes:
       - ../mcp-server:/app
+      - mcp_model_cache:/root/.cache
     depends_on:
       - redis
+      - postgres
 
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     ports:
       - "5432:5432"
     environment:
@@ -43,6 +47,7 @@ services:
       - POSTGRES_PASSWORD=sentix_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql
 
   redis:
     image: redis:7-alpine
@@ -54,3 +59,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  mcp_model_cache:
