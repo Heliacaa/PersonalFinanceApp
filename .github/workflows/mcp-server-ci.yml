@@ -1,0 +1,38 @@
+name: MCP Server CI
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'mcp-server/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'mcp-server/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: mcp-server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest httpx
+
+      - name: Run tests
+        # We set PYTHONPATH to . so that 'main' can be found in tests
+        run: PYTHONPATH=. pytest

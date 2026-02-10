@@ -1,0 +1,44 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'sentix_invest_frontend/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'sentix_invest_frontend/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: sentix_invest_frontend
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.10.7'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify formatting
+        run: flutter format --set-exit-if-changed .
+
+      - name: Analyze project
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test --platform chrome
+
+      - name: Build Web
+        run: flutter build web
