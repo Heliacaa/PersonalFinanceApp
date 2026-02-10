@@ -50,3 +50,7 @@ env/
 **/firebase-service-account.json
 **/google-services.json
 **/GoogleService-Info.plist
+
+
+## Figures
+/figs**
