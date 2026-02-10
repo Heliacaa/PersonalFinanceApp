@@ -40,6 +40,10 @@ public class SecurityConfig {
                                                                 "/v3/api-docs/**",
                                                                 "/api/v1/stocks/**",
                                                                 "/api/v1/markets/**",
+                                                                "/api/v1/crypto/**",
+                                                                "/api/v1/forex/**",
+                                                                "/api/v1/calendar/**",
+                                                                "/api/v1/ai/**",
                                                                 "/api/v1/payments/callback",
                                                                 "/api/v1/payments/callback-page")
                                                 .permitAll()
