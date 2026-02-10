@@ -1,4 +1,5 @@
 /// Models for portfolio risk analysis feature
+library;
 
 class PortfolioRisk {
   final String overallRisk;

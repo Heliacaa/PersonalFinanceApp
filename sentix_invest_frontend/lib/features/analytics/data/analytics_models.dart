@@ -1,4 +1,5 @@
 /// Models for portfolio analytics feature
+library;
 
 class PortfolioPerformance {
   final double currentValue;

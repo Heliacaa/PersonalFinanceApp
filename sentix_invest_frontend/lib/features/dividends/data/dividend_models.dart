@@ -1,4 +1,5 @@
 /// Models for dividend tracking feature
+library;
 
 class StockDividend {
   final String symbol;

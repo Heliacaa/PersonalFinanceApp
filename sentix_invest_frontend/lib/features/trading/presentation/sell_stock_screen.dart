@@ -187,11 +187,11 @@ class _SellStockScreenState extends State<SellStockScreen> {
                 _buildInfoColumn('You Own', '${holding.quantity} shares'),
                 _buildInfoColumn(
                   'Avg Cost',
-                  '${holding.averagePurchasePrice.toStringAsFixed(2)}',
+                  holding.averagePurchasePrice.toStringAsFixed(2),
                 ),
                 _buildInfoColumn(
                   'Total Value',
-                  '${holding.currentValue.toStringAsFixed(2)}',
+                  holding.currentValue.toStringAsFixed(2),
                 ),
               ],
             ),

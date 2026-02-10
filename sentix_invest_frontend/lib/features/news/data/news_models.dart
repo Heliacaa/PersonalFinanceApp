@@ -1,4 +1,5 @@
 /// Models for stock news feature
+library;
 
 class StockNews {
   final String symbol;

@@ -1,4 +1,5 @@
 /// Models for earnings calendar feature
+library;
 
 class StockEarnings {
   final String symbol;

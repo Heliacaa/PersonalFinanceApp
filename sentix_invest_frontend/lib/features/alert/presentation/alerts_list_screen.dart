@@ -389,7 +389,7 @@ class _AlertsListScreenState extends State<AlertsListScreen>
               ? Switch(
                   value: alert.isActive,
                   onChanged: (value) => _toggleAlert(alert),
-                  activeColor: const Color(0xFF6C5CE7),
+                  activeThumbColor: const Color(0xFF6C5CE7),
                 )
               : Icon(Icons.check_circle, color: const Color(0xFF00D9A5)),
         ),
