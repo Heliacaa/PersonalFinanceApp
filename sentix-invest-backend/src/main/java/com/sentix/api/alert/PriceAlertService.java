@@ -1,5 +1,6 @@
 package com.sentix.api.alert;
 
+import com.sentix.api.common.PageResponse;
 import com.sentix.api.stock.StockQuoteDto;
 import com.sentix.api.stock.StockService;
 import com.sentix.domain.AlertType;
@@ -9,6 +10,10 @@ import com.sentix.infrastructure.persistence.PriceAlertRepository;
 import com.sentix.service.PushNotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -70,6 +75,22 @@ public class PriceAlertService {
                 .toList();
     }
 
+    public PageResponse<PriceAlertResponse> getUserAlertsPaginated(User user, Pageable pageable) {
+        Page<PriceAlert> page = priceAlertRepository.findByUser(user, pageable);
+        List<PriceAlertResponse> content = page.getContent().stream()
+                .map(this::mapToResponse)
+                .toList();
+        return PageResponse.from(page, content);
+    }
+
+    public PageResponse<PriceAlertResponse> getActiveAlertsPaginated(User user, Pageable pageable) {
+        Page<PriceAlert> page = priceAlertRepository.findByUserAndIsActiveTrue(user, pageable);
+        List<PriceAlertResponse> content = page.getContent().stream()
+                .map(this::mapToResponse)
+                .toList();
+        return PageResponse.from(page, content);
+    }
+
     public List<PriceAlertResponse> getAlertsBySymbol(User user, String symbol) {
         List<PriceAlert> alerts = priceAlertRepository.findByUserAndSymbol(user, symbol.toUpperCase());
         return alerts.stream()
@@ -108,10 +129,12 @@ public class PriceAlertService {
 
     /**
      * Check all active alerts and return any that have been triggered.
-     * This can be called by a scheduled job.
+     * Runs every 5 minutes automatically when alert.check.enabled=true.
      */
+    @Scheduled(fixedRateString = "${alert.check.interval:300000}")
     @Transactional
     public List<PriceAlertResponse> checkAndTriggerAlerts() {
+        log.info("Running scheduled alert check...");
         List<PriceAlert> activeAlerts = priceAlertRepository.findByIsActiveTrue();
         List<PriceAlertResponse> triggeredAlerts = new ArrayList<>();
 

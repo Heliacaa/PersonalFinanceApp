@@ -40,6 +40,14 @@ public class User implements UserDetails {
 
     private BigDecimal balance; // Simple balance tracking for now
 
+    @Builder.Default
+    private BigDecimal paperBalance = new BigDecimal("100000"); // Starting paper money
+
+    @Builder.Default
+    private Boolean isPaperTrading = false;
+
+    private String preferredCurrency; // For multi-currency portfolio display
+
     private String fcmToken; // Firebase Cloud Messaging token for push notifications
 
     private LocalDateTime createdAt;
@@ -54,6 +62,15 @@ public class User implements UserDetails {
         }
         if (balance == null) {
             balance = BigDecimal.ZERO;
+        }
+        if (paperBalance == null) {
+            paperBalance = new BigDecimal("100000");
+        }
+        if (isPaperTrading == null) {
+            isPaperTrading = false;
+        }
+        if (preferredCurrency == null) {
+            preferredCurrency = "USD";
         }
     }
 

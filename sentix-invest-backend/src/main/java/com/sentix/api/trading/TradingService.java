@@ -1,5 +1,7 @@
 package com.sentix.api.trading;
 
+import com.sentix.api.common.PageResponse;
+import com.sentix.api.portfolio.PortfolioSnapshotService;
 import com.sentix.api.stock.StockQuoteDto;
 import com.sentix.api.stock.StockService;
 import com.sentix.domain.*;
@@ -8,6 +10,8 @@ import com.sentix.infrastructure.persistence.TransactionRepository;
 import com.sentix.infrastructure.persistence.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,10 +29,12 @@ public class TradingService {
     private final PortfolioHoldingRepository portfolioHoldingRepository;
     private final TransactionRepository transactionRepository;
     private final UserRepository userRepository;
+    private final PortfolioSnapshotService portfolioSnapshotService;
 
     @Transactional
     public TradeResponse buyStock(User user, BuyRequest request) {
-        log.info("User {} attempting to buy {} shares of {}", user.getEmail(), request.quantity(), request.symbol());
+        boolean isPaper = Boolean.TRUE.equals(user.getIsPaperTrading());
+        log.info("User {} attempting to buy {} shares of {} (paper={})", user.getEmail(), request.quantity(), request.symbol(), isPaper);
 
         // 1. Fetch current stock price
         StockQuoteDto stockQuote = stockService.getStockQuote(request.symbol());
@@ -43,22 +49,27 @@ public class TradingService {
         BigDecimal pricePerShare = BigDecimal.valueOf(stockQuote.getPrice());
         BigDecimal totalCost = pricePerShare.multiply(BigDecimal.valueOf(request.quantity()));
 
-        // 3. Check if user has sufficient balance
-        if (user.getBalance().compareTo(totalCost) < 0) {
+        // 3. Check if user has sufficient balance (paper or real)
+        BigDecimal availableBalance = isPaper ? user.getPaperBalance() : user.getBalance();
+        if (availableBalance.compareTo(totalCost) < 0) {
             return TradeResponse.builder()
                     .success(false)
-                    .message("Insufficient balance. Required: " + totalCost + " " + stockQuote.getCurrency() +
-                            ", Available: " + user.getBalance())
+                    .message("Insufficient " + (isPaper ? "paper " : "") + "balance. Required: " + totalCost + " " + stockQuote.getCurrency() +
+                            ", Available: " + availableBalance)
                     .build();
         }
 
         // 4. Deduct from user balance
-        user.setBalance(user.getBalance().subtract(totalCost));
+        if (isPaper) {
+            user.setPaperBalance(user.getPaperBalance().subtract(totalCost));
+        } else {
+            user.setBalance(user.getBalance().subtract(totalCost));
+        }
         userRepository.save(user);
 
-        // 5. Create or update portfolio holding
+        // 5. Create or update portfolio holding (scoped by paper flag)
         PortfolioHolding holding = portfolioHoldingRepository
-                .findByUserAndSymbol(user, request.symbol().toUpperCase())
+                .findByUserAndSymbolAndIsPaper(user, request.symbol().toUpperCase(), isPaper)
                 .orElse(null);
 
         if (holding == null) {
@@ -70,6 +81,7 @@ public class TradingService {
                     .quantity(request.quantity())
                     .averagePurchasePrice(pricePerShare)
                     .currency(stockQuote.getCurrency())
+                    .isPaper(isPaper)
                     .build();
         } else {
             // Update existing holding with new average price
@@ -95,33 +107,42 @@ public class TradingService {
                 .totalAmount(totalCost)
                 .currency(stockQuote.getCurrency())
                 .executedAt(LocalDateTime.now())
+                .isPaper(isPaper)
                 .build();
         transactionRepository.save(transaction);
 
-        log.info("User {} successfully bought {} shares of {} for {}",
-                user.getEmail(), request.quantity(), request.symbol(), totalCost);
+        log.info("User {} successfully bought {} shares of {} for {} (paper={})",
+                user.getEmail(), request.quantity(), request.symbol(), totalCost, isPaper);
+
+        // Take portfolio snapshot after trade
+        try {
+            portfolioSnapshotService.takeSnapshotForUser(user, isPaper);
+        } catch (Exception e) {
+            log.warn("Failed to take post-trade snapshot: {}", e.getMessage());
+        }
 
         return TradeResponse.builder()
                 .success(true)
-                .message("Successfully purchased " + request.quantity() + " shares of " + stockQuote.getName())
+                .message("Successfully purchased " + request.quantity() + " shares of " + stockQuote.getName() + (isPaper ? " (Paper Trade)" : ""))
                 .transaction(mapToTransactionResponse(transaction))
-                .newBalance(user.getBalance())
+                .newBalance(isPaper ? user.getPaperBalance() : user.getBalance())
                 .build();
     }
 
     @Transactional
     public TradeResponse sellStock(User user, SellRequest request) {
-        log.info("User {} attempting to sell {} shares of {}", user.getEmail(), request.quantity(), request.symbol());
+        boolean isPaper = Boolean.TRUE.equals(user.getIsPaperTrading());
+        log.info("User {} attempting to sell {} shares of {} (paper={})", user.getEmail(), request.quantity(), request.symbol(), isPaper);
 
-        // 1. Check if user owns the stock
+        // 1. Check if user owns the stock (scoped by paper flag)
         PortfolioHolding holding = portfolioHoldingRepository
-                .findByUserAndSymbol(user, request.symbol().toUpperCase())
+                .findByUserAndSymbolAndIsPaper(user, request.symbol().toUpperCase(), isPaper)
                 .orElse(null);
 
         if (holding == null) {
             return TradeResponse.builder()
                     .success(false)
-                    .message("You don't own any shares of " + request.symbol())
+                    .message("You don't own any " + (isPaper ? "paper " : "") + "shares of " + request.symbol())
                     .build();
         }
 
@@ -147,8 +168,12 @@ public class TradingService {
         BigDecimal pricePerShare = BigDecimal.valueOf(stockQuote.getPrice());
         BigDecimal totalProceeds = pricePerShare.multiply(BigDecimal.valueOf(request.quantity()));
 
-        // 5. Add to user balance
-        user.setBalance(user.getBalance().add(totalProceeds));
+        // 5. Add to user balance (paper or real)
+        if (isPaper) {
+            user.setPaperBalance(user.getPaperBalance().add(totalProceeds));
+        } else {
+            user.setBalance(user.getBalance().add(totalProceeds));
+        }
         userRepository.save(user);
 
         // 6. Update or remove portfolio holding
@@ -171,17 +196,25 @@ public class TradingService {
                 .totalAmount(totalProceeds)
                 .currency(stockQuote.getCurrency())
                 .executedAt(LocalDateTime.now())
+                .isPaper(isPaper)
                 .build();
         transactionRepository.save(transaction);
 
-        log.info("User {} successfully sold {} shares of {} for {}",
-                user.getEmail(), request.quantity(), request.symbol(), totalProceeds);
+        log.info("User {} successfully sold {} shares of {} for {} (paper={})",
+                user.getEmail(), request.quantity(), request.symbol(), totalProceeds, isPaper);
+
+        // Take portfolio snapshot after trade
+        try {
+            portfolioSnapshotService.takeSnapshotForUser(user, isPaper);
+        } catch (Exception e) {
+            log.warn("Failed to take post-trade snapshot: {}", e.getMessage());
+        }
 
         return TradeResponse.builder()
                 .success(true)
-                .message("Successfully sold " + request.quantity() + " shares of " + stockQuote.getName())
+                .message("Successfully sold " + request.quantity() + " shares of " + stockQuote.getName() + (isPaper ? " (Paper Trade)" : ""))
                 .transaction(mapToTransactionResponse(transaction))
-                .newBalance(user.getBalance())
+                .newBalance(isPaper ? user.getPaperBalance() : user.getBalance())
                 .build();
     }
 
@@ -197,6 +230,14 @@ public class TradingService {
                 .stream()
                 .map(this::mapToTransactionResponse)
                 .toList();
+    }
+
+    public PageResponse<TransactionResponse> getTransactionsPaginated(User user, Pageable pageable) {
+        Page<Transaction> page = transactionRepository.findByUserOrderByExecutedAtDesc(user, pageable);
+        List<TransactionResponse> content = page.getContent().stream()
+                .map(this::mapToTransactionResponse)
+                .toList();
+        return PageResponse.from(page, content);
     }
 
     private TransactionResponse mapToTransactionResponse(Transaction transaction) {

@@ -12,6 +12,8 @@ import '../../crypto/presentation/crypto_screen.dart';
 import '../../forex/presentation/forex_screen.dart';
 import '../../ai_analysis/presentation/ai_chat_screen.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/services/user_repository.dart';
+import '../../../core/models/user_profile.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -24,7 +26,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
   final _dioClient = DioClient();
   final _authRepository = AuthRepository();
+  final _userRepository = UserRepository();
   bool _isLoading = true;
+  UserProfile? _userProfile;
   String? _fullName;
   double? _balance;
   String? _error;
@@ -44,11 +48,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _fetchUserData() async {
     try {
-      final response = await _dioClient.dio.get('/users/me');
+      final profile = await _userRepository.getProfile();
       if (mounted) {
         setState(() {
-          _fullName = response.data['fullName'];
-          _balance = (response.data['balance'] ?? 0).toDouble();
+          _userProfile = profile;
+          _fullName = profile.fullName;
+          _balance = profile.activeBalance;
           _isLoading = false;
         });
       }
@@ -58,6 +63,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _error = 'Failed to load user data: $e';
           _isLoading = false;
         });
+      }
+    }
+  }
+
+  Future<void> _togglePaperTrading() async {
+    try {
+      final profile = await _userRepository.togglePaperTrading();
+      if (mounted) {
+        setState(() {
+          _userProfile = profile;
+          _balance = profile.activeBalance;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              profile.isPaperTrading
+                  ? 'Paper trading mode enabled'
+                  : 'Switched to real trading',
+            ),
+            backgroundColor:
+                profile.isPaperTrading ? Colors.orange : Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to toggle: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -173,6 +210,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Paper Trading Banner
+            if (_userProfile?.isPaperTrading == true) _buildPaperTradingBanner(),
+
             // Greeting
             Text(
               'Hello, ${_fullName ?? "User"}!',
@@ -230,6 +270,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
               'Cash Balance',
               style: TextStyle(fontSize: 14, color: Colors.white70),
             ),
+            if (_userProfile?.isPaperTrading == true)
+              Container(
+                margin: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'PAPER',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
             const SizedBox(height: 8),
             Text(
               '₺ ${_balance?.toStringAsFixed(2) ?? "0.00"}',
@@ -280,6 +338,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPaperTradingBanner() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade400),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.science, color: Colors.orange.shade800),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Paper Trading Mode',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange.shade900,
+                  ),
+                ),
+                Text(
+                  'Trades use virtual money. No real funds are affected.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _togglePaperTrading,
+            child: const Text('Switch'),
+          ),
+        ],
       ),
     );
   }
@@ -398,6 +500,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 12),
+        // Paper Trading Toggle
+        SizedBox(
+          width: double.infinity,
+          child: _buildActionCard(
+            icon: _userProfile?.isPaperTrading == true
+                ? Icons.science
+                : Icons.science_outlined,
+            label: _userProfile?.isPaperTrading == true
+                ? 'Paper Mode ON'
+                : 'Paper Mode OFF',
+            color: _userProfile?.isPaperTrading == true
+                ? Colors.orange
+                : Colors.grey,
+            onTap: _togglePaperTrading,
+          ),
         ),
       ],
     );

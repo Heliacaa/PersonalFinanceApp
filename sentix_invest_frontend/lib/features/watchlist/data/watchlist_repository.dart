@@ -1,4 +1,5 @@
 import '../../../core/network/dio_client.dart';
+import '../../../core/models/page_response.dart';
 import 'watchlist_models.dart';
 
 class WatchlistRepository {
@@ -7,17 +8,32 @@ class WatchlistRepository {
   WatchlistRepository({DioClient? dioClient})
     : _dioClient = dioClient ?? DioClient();
 
-  Future<List<WatchlistItem>> getWatchlist() async {
+  /// Get watchlist with pagination.
+  Future<PageResponse<WatchlistItem>> getWatchlistPaginated({
+    int page = 0,
+    int size = 20,
+  }) async {
     try {
-      final response = await _dioClient.dio.get('/watchlist');
+      final response = await _dioClient.dio.get(
+        '/watchlist',
+        queryParameters: {'page': page, 'size': size},
+      );
       if (response.statusCode == 200) {
-        final List<dynamic> data = response.data;
-        return data.map((e) => WatchlistItem.fromJson(e)).toList();
+        return PageResponse.fromJson(
+          response.data,
+          (json) => WatchlistItem.fromJson(json),
+        );
       }
       throw Exception('Failed to load watchlist');
     } catch (e) {
       throw Exception('Error fetching watchlist: $e');
     }
+  }
+
+  /// Get watchlist (backward compatible, returns first page as list).
+  Future<List<WatchlistItem>> getWatchlist() async {
+    final pageResponse = await getWatchlistPaginated();
+    return pageResponse.content;
   }
 
   Future<WatchlistItem?> addToWatchlist(String symbol, String stockName) async {

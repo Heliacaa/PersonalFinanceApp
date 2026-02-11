@@ -51,6 +51,10 @@ public class Transaction {
     @Column(nullable = false)
     private LocalDateTime executedAt;
 
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean isPaper = false;
+
     @PrePersist
     protected void onCreate() {
         if (executedAt == null) {

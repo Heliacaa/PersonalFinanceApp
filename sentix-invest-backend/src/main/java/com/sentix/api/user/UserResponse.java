@@ -13,4 +13,7 @@ public class UserResponse {
     private String fullName;
     private String email;
     private java.math.BigDecimal balance;
+    private java.math.BigDecimal paperBalance;
+    private Boolean isPaperTrading;
+    private String preferredCurrency;
 }

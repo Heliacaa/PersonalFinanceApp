@@ -1,5 +1,6 @@
 package com.sentix.api.watchlist;
 
+import com.sentix.api.common.PageResponse;
 import com.sentix.api.stock.StockQuoteDto;
 import com.sentix.api.stock.StockService;
 import com.sentix.domain.User;
@@ -7,6 +8,8 @@ import com.sentix.domain.Watchlist;
 import com.sentix.infrastructure.persistence.WatchlistRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,6 +69,14 @@ public class WatchlistService {
 
     public boolean isInWatchlist(User user, String symbol) {
         return watchlistRepository.existsByUserAndSymbol(user, symbol.toUpperCase());
+    }
+
+    public PageResponse<WatchlistItemResponse> getWatchlistPaginated(User user, Pageable pageable) {
+        Page<Watchlist> page = watchlistRepository.findByUser(user, pageable);
+        List<WatchlistItemResponse> content = page.getContent().stream()
+                .map(this::buildWatchlistItemResponse)
+                .toList();
+        return PageResponse.from(page, content);
     }
 
     private WatchlistItemResponse buildWatchlistItemResponse(Watchlist item) {

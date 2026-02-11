@@ -1,9 +1,11 @@
 package com.sentix.api.alert;
 
+import com.sentix.api.common.PageResponse;
 import com.sentix.domain.User;
 import com.sentix.infrastructure.persistence.UserRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -30,18 +32,22 @@ public class PriceAlertController {
     }
 
     @GetMapping
-    public ResponseEntity<List<PriceAlertResponse>> getUserAlerts(
-            @AuthenticationPrincipal UserDetails userDetails) {
+    public ResponseEntity<PageResponse<PriceAlertResponse>> getUserAlerts(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
         User user = getUser(userDetails);
-        List<PriceAlertResponse> alerts = priceAlertService.getUserAlerts(user);
+        PageResponse<PriceAlertResponse> alerts = priceAlertService.getUserAlertsPaginated(user, PageRequest.of(page, size));
         return ResponseEntity.ok(alerts);
     }
 
     @GetMapping("/active")
-    public ResponseEntity<List<PriceAlertResponse>> getActiveAlerts(
-            @AuthenticationPrincipal UserDetails userDetails) {
+    public ResponseEntity<PageResponse<PriceAlertResponse>> getActiveAlerts(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
         User user = getUser(userDetails);
-        List<PriceAlertResponse> alerts = priceAlertService.getActiveAlerts(user);
+        PageResponse<PriceAlertResponse> alerts = priceAlertService.getActiveAlertsPaginated(user, PageRequest.of(page, size));
         return ResponseEntity.ok(alerts);
     }
 

@@ -13,6 +13,7 @@ public record PortfolioSummaryResponse(
         BigDecimal totalProfitLossPercent,
         BigDecimal cashBalance,
         int holdingsCount,
+        String displayCurrency,
         List<AllocationItem> allocations) {
     @Builder
     public record AllocationItem(

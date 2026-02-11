@@ -5,8 +5,13 @@ import '../data/trading_repository.dart';
 
 class SellStockScreen extends StatefulWidget {
   final PortfolioHolding holding;
+  final bool isPaperTrading;
 
-  const SellStockScreen({super.key, required this.holding});
+  const SellStockScreen({
+    super.key,
+    required this.holding,
+    this.isPaperTrading = false,
+  });
 
   @override
   State<SellStockScreen> createState() => _SellStockScreenState();
@@ -94,7 +99,35 @@ class _SellStockScreenState extends State<SellStockScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Sell ${widget.holding.symbol}')),
+      appBar: AppBar(
+        title: Text('Sell ${widget.holding.symbol}'),
+        actions: [
+          if (widget.isPaperTrading)
+            Container(
+              margin: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.science, size: 16, color: Colors.orange.shade800),
+                  const SizedBox(width: 4),
+                  Text(
+                    'PAPER',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange.shade800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(

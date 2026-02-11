@@ -10,6 +10,7 @@ class PortfolioHolding {
   final double profitLoss;
   final double profitLossPercent;
   final String currency;
+  final double? valueInPreferredCurrency;
 
   PortfolioHolding({
     required this.id,
@@ -23,6 +24,7 @@ class PortfolioHolding {
     required this.profitLoss,
     required this.profitLossPercent,
     required this.currency,
+    this.valueInPreferredCurrency,
   });
 
   factory PortfolioHolding.fromJson(Map<String, dynamic> json) {
@@ -38,6 +40,8 @@ class PortfolioHolding {
       profitLoss: (json['profitLoss'] ?? 0).toDouble(),
       profitLossPercent: (json['profitLossPercent'] ?? 0).toDouble(),
       currency: json['currency'] ?? 'TRY',
+      valueInPreferredCurrency:
+          json['valueInPreferredCurrency']?.toDouble(),
     );
   }
 
@@ -75,6 +79,7 @@ class PortfolioSummary {
   final double cashBalance;
   final int holdingsCount;
   final List<AllocationItem> allocations;
+  final String? displayCurrency;
 
   PortfolioSummary({
     required this.totalValue,
@@ -84,6 +89,7 @@ class PortfolioSummary {
     required this.cashBalance,
     required this.holdingsCount,
     required this.allocations,
+    this.displayCurrency,
   });
 
   factory PortfolioSummary.fromJson(Map<String, dynamic> json) {
@@ -99,6 +105,7 @@ class PortfolioSummary {
               ?.map((e) => AllocationItem.fromJson(e))
               .toList() ??
           [],
+      displayCurrency: json['displayCurrency'],
     );
   }
 

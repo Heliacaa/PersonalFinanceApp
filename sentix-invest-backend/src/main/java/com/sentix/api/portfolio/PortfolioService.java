@@ -1,5 +1,6 @@
 package com.sentix.api.portfolio;
 
+import com.sentix.api.forex.CurrencyConversionService;
 import com.sentix.api.stock.StockQuoteDto;
 import com.sentix.api.stock.StockService;
 import com.sentix.domain.PortfolioHolding;
@@ -21,9 +22,12 @@ public class PortfolioService {
 
     private final PortfolioHoldingRepository portfolioHoldingRepository;
     private final StockService stockService;
+    private final PortfolioSnapshotService portfolioSnapshotService;
+    private final CurrencyConversionService currencyConversionService;
 
     public List<PortfolioHoldingResponse> getPortfolio(User user) {
-        List<PortfolioHolding> holdings = portfolioHoldingRepository.findByUser(user);
+        boolean isPaper = Boolean.TRUE.equals(user.getIsPaperTrading());
+        List<PortfolioHolding> holdings = portfolioHoldingRepository.findByUserAndIsPaper(user, isPaper);
         List<PortfolioHoldingResponse> responses = new ArrayList<>();
 
         for (PortfolioHolding holding : holdings) {
@@ -34,7 +38,8 @@ public class PortfolioService {
     }
 
     public PortfolioSummaryResponse getPortfolioSummary(User user) {
-        List<PortfolioHolding> holdings = portfolioHoldingRepository.findByUser(user);
+        boolean isPaper = Boolean.TRUE.equals(user.getIsPaperTrading());
+        List<PortfolioHolding> holdings = portfolioHoldingRepository.findByUserAndIsPaper(user, isPaper);
 
         BigDecimal totalValue = BigDecimal.ZERO;
         BigDecimal totalCostBasis = BigDecimal.ZERO;
@@ -84,14 +89,16 @@ public class PortfolioService {
                 .totalCostBasis(totalCostBasis.setScale(2, RoundingMode.HALF_UP))
                 .totalProfitLoss(totalProfitLoss.setScale(2, RoundingMode.HALF_UP))
                 .totalProfitLossPercent(totalProfitLossPercent.setScale(2, RoundingMode.HALF_UP))
-                .cashBalance(user.getBalance())
+                .cashBalance(isPaper ? user.getPaperBalance() : user.getBalance())
                 .holdingsCount(holdings.size())
+                .displayCurrency(user.getPreferredCurrency() != null ? user.getPreferredCurrency() : "USD")
                 .allocations(allocations)
                 .build();
     }
 
     public PortfolioHoldingResponse getHoldingBySymbol(User user, String symbol) {
-        return portfolioHoldingRepository.findByUserAndSymbol(user, symbol.toUpperCase())
+        boolean isPaperMode = Boolean.TRUE.equals(user.getIsPaperTrading());
+        return portfolioHoldingRepository.findByUserAndSymbolAndIsPaper(user, symbol.toUpperCase(), isPaperMode)
                 .map(this::buildHoldingResponse)
                 .orElse(null);
     }
@@ -109,6 +116,13 @@ public class PortfolioService {
                     .multiply(BigDecimal.valueOf(100));
         }
 
+        // Convert to preferred currency if different
+        String preferredCurrency = holding.getUser().getPreferredCurrency();
+        BigDecimal valueInPreferred = currentValue;
+        if (preferredCurrency != null && !preferredCurrency.equalsIgnoreCase(holding.getCurrency())) {
+            valueInPreferred = currencyConversionService.convert(currentValue, holding.getCurrency(), preferredCurrency);
+        }
+
         return PortfolioHoldingResponse.builder()
                 .id(holding.getId())
                 .symbol(holding.getSymbol())
@@ -121,6 +135,7 @@ public class PortfolioService {
                 .profitLoss(profitLoss.setScale(2, RoundingMode.HALF_UP))
                 .profitLossPercent(profitLossPercent.setScale(2, RoundingMode.HALF_UP))
                 .currency(holding.getCurrency())
+                .valueInPreferredCurrency(valueInPreferred.setScale(2, RoundingMode.HALF_UP))
                 .build();
     }
 
@@ -141,7 +156,8 @@ public class PortfolioService {
      * performance history
      */
     public PortfolioPerformanceResponse getPerformanceAnalytics(User user) {
-        List<PortfolioHolding> holdings = portfolioHoldingRepository.findByUser(user);
+        boolean isPaper = Boolean.TRUE.equals(user.getIsPaperTrading());
+        List<PortfolioHolding> holdings = portfolioHoldingRepository.findByUserAndIsPaper(user, isPaper);
 
         BigDecimal totalValue = BigDecimal.ZERO;
         BigDecimal totalInvested = BigDecimal.ZERO;
@@ -222,9 +238,13 @@ public class PortfolioService {
                     .multiply(BigDecimal.valueOf(100));
         }
 
-        // Generate simulated performance history (last 30 days)
-        List<PortfolioPerformanceResponse.PerformanceDataPoint> performanceHistory = generatePerformanceHistory(
-                totalValue, totalReturnPercent);
+        // Get real performance history from snapshots, fall back to simulated if none exist
+        boolean isPaperForHistory = Boolean.TRUE.equals(user.getIsPaperTrading());
+        List<PortfolioPerformanceResponse.PerformanceDataPoint> performanceHistory =
+                portfolioSnapshotService.getPerformanceHistory(user, 30, isPaperForHistory);
+        if (performanceHistory.isEmpty()) {
+            performanceHistory = generatePerformanceHistory(totalValue, totalReturnPercent);
+        }
 
         return PortfolioPerformanceResponse.builder()
                 .currentValue(totalValue.setScale(2, RoundingMode.HALF_UP))

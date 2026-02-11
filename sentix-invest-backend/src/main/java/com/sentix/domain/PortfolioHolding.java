@@ -41,6 +41,10 @@ public class PortfolioHolding {
     @Column(nullable = false)
     private String currency;
 
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean isPaper = false;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

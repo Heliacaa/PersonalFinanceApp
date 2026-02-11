@@ -2,6 +2,8 @@ package com.sentix.infrastructure.persistence;
 
 import com.sentix.domain.PriceAlert;
 import com.sentix.domain.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -13,9 +15,13 @@ public interface PriceAlertRepository extends JpaRepository<PriceAlert, UUID> {
 
     List<PriceAlert> findByUser(User user);
 
+    Page<PriceAlert> findByUser(User user, Pageable pageable);
+
     List<PriceAlert> findByUserAndSymbol(User user, String symbol);
 
     List<PriceAlert> findByIsActiveTrue();
 
     List<PriceAlert> findByUserAndIsActiveTrue(User user);
+
+    Page<PriceAlert> findByUserAndIsActiveTrue(User user, Pageable pageable);
 }

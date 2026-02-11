@@ -17,5 +17,6 @@ public record PortfolioHoldingResponse(
         BigDecimal totalCostBasis,
         BigDecimal profitLoss,
         BigDecimal profitLossPercent,
-        String currency) {
+        String currency,
+        BigDecimal valueInPreferredCurrency) {
 }

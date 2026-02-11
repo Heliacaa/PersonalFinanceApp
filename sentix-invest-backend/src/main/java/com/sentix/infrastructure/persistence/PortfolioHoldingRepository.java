@@ -14,7 +14,11 @@ public interface PortfolioHoldingRepository extends JpaRepository<PortfolioHoldi
 
     List<PortfolioHolding> findByUser(User user);
 
+    List<PortfolioHolding> findByUserAndIsPaper(User user, Boolean isPaper);
+
     Optional<PortfolioHolding> findByUserAndSymbol(User user, String symbol);
+
+    Optional<PortfolioHolding> findByUserAndSymbolAndIsPaper(User user, String symbol, Boolean isPaper);
 
     boolean existsByUserAndSymbol(User user, String symbol);
 
