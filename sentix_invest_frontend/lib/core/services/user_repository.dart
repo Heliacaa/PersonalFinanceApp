@@ -25,7 +25,8 @@ class UserRepository {
     try {
       final response = await _dioClient.dio.patch('/users/paper-trading');
       if (response.statusCode == 200) {
-        return UserProfile.fromJson(response.data);
+        // Backend returns partial map; re-fetch full profile
+        return await getProfile();
       }
       throw Exception('Failed to toggle paper trading');
     } catch (e) {
@@ -38,10 +39,11 @@ class UserRepository {
     try {
       final response = await _dioClient.dio.patch(
         '/users/preferred-currency',
-        queryParameters: {'currency': currency},
+        data: {'currency': currency},
       );
       if (response.statusCode == 200) {
-        return UserProfile.fromJson(response.data);
+        // Backend returns partial map; re-fetch full profile
+        return await getProfile();
       }
       throw Exception('Failed to update currency');
     } catch (e) {

@@ -36,6 +36,7 @@ public class SecurityConfig {
                                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                                 .authorizeHttpRequests(auth -> auth
                                                 .requestMatchers(
+                                                                "/error",
                                                                 "/api/v1/auth/**",
                                                                 "/actuator/health",
                                                                 "/swagger-ui/**",

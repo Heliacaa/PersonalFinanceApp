@@ -52,7 +52,7 @@ public class Transaction {
     private LocalDateTime executedAt;
 
     @Builder.Default
-    @Column(nullable = false)
+    @Column(columnDefinition = "boolean not null default false")
     private Boolean isPaper = false;
 
     @PrePersist
