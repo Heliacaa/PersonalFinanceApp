@@ -5,10 +5,12 @@ on:
     branches: [ main, master ]
     paths:
       - 'sentix_invest_frontend/**'
+      - '.github/workflows/frontend-ci.yml'
   pull_request:
     branches: [ main, master ]
     paths:
       - 'sentix_invest_frontend/**'
+      - '.github/workflows/frontend-ci.yml'
 
 jobs:
   build:

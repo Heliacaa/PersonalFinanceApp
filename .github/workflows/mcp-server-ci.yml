@@ -5,10 +5,12 @@ on:
     branches: [ main, master ]
     paths:
       - 'mcp-server/**'
+      - '.github/workflows/mcp-server-ci.yml'
   pull_request:
     branches: [ main, master ]
     paths:
       - 'mcp-server/**'
+      - '.github/workflows/mcp-server-ci.yml'
 
 jobs:
   build:
