@@ -38,13 +38,17 @@ public class UserController {
     }
 
     @PatchMapping("/paper-trading")
-    public ResponseEntity<Map<String, Object>> togglePaperTrading(@AuthenticationPrincipal User user) {
+    public ResponseEntity<UserResponse> togglePaperTrading(@AuthenticationPrincipal User user) {
         user.setIsPaperTrading(!Boolean.TRUE.equals(user.getIsPaperTrading()));
         userRepository.save(user);
-        return ResponseEntity.ok(Map.of(
-                "isPaperTrading", user.getIsPaperTrading(),
-                "paperBalance", user.getPaperBalance(),
-                "balance", user.getBalance()));
+        return ResponseEntity.ok(UserResponse.builder()
+                .fullName(user.getFullName())
+                .email(user.getEmail())
+                .balance(user.getBalance())
+                .paperBalance(user.getPaperBalance())
+                .isPaperTrading(user.getIsPaperTrading())
+                .preferredCurrency(user.getPreferredCurrency())
+                .build());
     }
 
     @PatchMapping("/preferred-currency")

@@ -25,8 +25,7 @@ class UserRepository {
     try {
       final response = await _dioClient.dio.patch('/users/paper-trading');
       if (response.statusCode == 200) {
-        // Backend returns partial map; re-fetch full profile
-        return await getProfile();
+        return UserProfile.fromJson(response.data);
       }
       throw Exception('Failed to toggle paper trading');
     } catch (e) {
