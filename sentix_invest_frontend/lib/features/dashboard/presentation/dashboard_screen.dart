@@ -135,7 +135,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             )
           : null,
-      body: _getCurrentScreen(),
+      body: _currentIndex == 0
+          ? _getCurrentScreen()
+          : SafeArea(child: _getCurrentScreen()),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.push(
